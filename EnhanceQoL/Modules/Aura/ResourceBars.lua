@@ -80,6 +80,7 @@ local ResourcebarVars = {
 	OOC_VISIBILITY_DRIVER = "[combat] show; hide",
 	MAELSTROM_WEAPON_MAX_STACKS = 10,
 	MAELSTROM_WEAPON_SEGMENTS = 5,
+	MAELSTROM_WEAPON_MID_STACK_DEFAULT = 5,
 	MAELSTROM_WEAPON_SPELL_ID = 344179,
 	VOID_METAMORPHOSIS_SPELL_ID = 1225789,
 	VOID_META_TALENT_SOUL_GLUTTON_SPELL_ID = 1247534,
@@ -193,6 +194,7 @@ local COSMETIC_BAR_KEYS = {
 	"useMaelstromTenStacks",
 	"useMaelstromCarryFill",
 	"maelstromFiveColor",
+	"maelstromMidStack",
 	"useHolyThreeColor",
 	"holyThreeColor",
 	"runeCooldownColor",
@@ -640,6 +642,16 @@ local function ensureMaelstromWeaponDefaults(cfg)
 	if cfg.useMaelstromFiveColor == nil then cfg.useMaelstromFiveColor = true end
 	if cfg.useMaelstromTenStacks == nil then cfg.useMaelstromTenStacks = cfg.visualSegments == RB.MAELSTROM_WEAPON_MAX_STACKS end
 	if cfg.useMaelstromCarryFill == nil then cfg.useMaelstromCarryFill = false end
+	do
+		local maxStacks = tonumber(RB.MAELSTROM_WEAPON_MAX_STACKS) or 10
+		local cap = max(1, maxStacks - 1)
+		local midStack = tonumber(cfg.maelstromMidStack)
+		if midStack == nil then midStack = tonumber(RB.MAELSTROM_WEAPON_MID_STACK_DEFAULT) or tonumber(RB.MAELSTROM_WEAPON_SEGMENTS) or 5 end
+		midStack = floor(midStack + 0.5)
+		if midStack < 1 then midStack = 1 end
+		if midStack > cap then midStack = cap end
+		cfg.maelstromMidStack = midStack
+	end
 	if cfg.useMaxColor == nil then cfg.useMaxColor = true end
 	if not cfg.maxColor then cfg.maxColor = CopyTable(RB.DEFAULT_MAX_COLOR) end
 	if not cfg.maelstromFiveColor then cfg.maelstromFiveColor = CopyTable(ResourcebarVars.DEFAULT_MAELSTROM_WEAPON_FIVE_COLOR) end
@@ -3375,7 +3387,11 @@ function updatePowerBar(type, runeSlot)
 			local maxCol = cfg.maxColor or RB.DEFAULT_MAX_COLOR
 			targetR, targetG, targetB, targetA = maxCol[1] or targetR, maxCol[2] or targetG, maxCol[3] or targetB, maxCol[4] or targetA
 			flag = "max"
-		elseif type == "MAELSTROM_WEAPON" and cfg.useMaelstromFiveColor ~= false and stacks >= RB.MAELSTROM_WEAPON_SEGMENTS then
+		elseif
+			type == "MAELSTROM_WEAPON"
+			and cfg.useMaelstromFiveColor ~= false
+			and stacks >= (tonumber(cfg.maelstromMidStack) or tonumber(RB.MAELSTROM_WEAPON_MID_STACK_DEFAULT) or RB.MAELSTROM_WEAPON_SEGMENTS)
+		then
 			local mid = cfg.maelstromFiveColor or ResourcebarVars.DEFAULT_MAELSTROM_WEAPON_FIVE_COLOR
 			targetR, targetG, targetB, targetA = mid[1] or targetR, mid[2] or targetG, mid[3] or targetB, mid[4] or targetA
 			flag = "mid"
@@ -5563,6 +5579,8 @@ ResourceBars.DEFAULT_POWER_WIDTH = RB.DEFAULT_POWER_WIDTH
 ResourceBars.DEFAULT_POWER_HEIGHT = RB.DEFAULT_POWER_HEIGHT or RB.DEFAULT_HEALTH_HEIGHT
 ResourceBars.MIN_RESOURCE_BAR_WIDTH = RB.MIN_RESOURCE_BAR_WIDTH
 ResourceBars.MAELSTROM_WEAPON_SEGMENTS = RB.MAELSTROM_WEAPON_SEGMENTS
+ResourceBars.MAELSTROM_WEAPON_MAX_STACKS = RB.MAELSTROM_WEAPON_MAX_STACKS
+ResourceBars.MAELSTROM_WEAPON_MID_STACK_DEFAULT = RB.MAELSTROM_WEAPON_MID_STACK_DEFAULT
 ResourceBars.THRESHOLD_THICKNESS = RB.THRESHOLD_THICKNESS
 ResourceBars.THRESHOLD_DEFAULT = RB.THRESHOLD_DEFAULT
 ResourceBars.DEFAULT_THRESHOLDS = RB.DEFAULT_THRESHOLDS

@@ -33,6 +33,7 @@ local HIGH_BURST_SETTLE = 0.6
 
 local min = math.min
 local max = math.max
+local NewTimer = C_Timer and C_Timer.NewTimer
 
 local function isShaman()
 	local _, class = UnitClass("player")
@@ -51,6 +52,16 @@ local function isUFPlayerEnabled()
 end
 
 local function shouldBuildBar() return isShaman() and isUFPlayerEnabled() end
+
+local function getCurrentSpecId()
+	if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecializationInfo) then return nil end
+	local specIndex = C_SpecializationInfo.GetSpecialization()
+	if type(specIndex) ~= "number" or specIndex <= 0 then return nil end
+	local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+	if type(specId) == "table" then specId = specId.specID end
+	if type(specId) ~= "number" then return nil end
+	return specId
+end
 
 local function getMaelstromWeaponStacksFromResourceBars()
 	local rb = addon and addon.Aura and addon.Aura.ResourceBars
@@ -374,10 +385,27 @@ function ShamanMaelstromWeaponBar:UpdatePower()
 	end
 end
 
+function ShamanMaelstromWeaponBar:ShouldShowForCurrentSpec() return shouldBuildBar() and getCurrentSpecId() == ENHANCEMENT_SPEC_ID end
+
+function ShamanMaelstromWeaponBar:ScheduleSetup(delay)
+	if self._setupTimer then
+		self._setupTimer:Cancel()
+		self._setupTimer = nil
+	end
+
+	if not NewTimer then
+		self:Setup()
+		return
+	end
+
+	self._setupTimer = NewTimer(delay or 0.2, function()
+		self._setupTimer = nil
+		self:Setup()
+	end)
+end
+
 function ShamanMaelstromWeaponBar:Setup()
-	local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
-	local specId = specIndex and C_SpecializationInfo.GetSpecializationInfo(specIndex)
-	local showBar = shouldBuildBar() and specId == ENHANCEMENT_SPEC_ID
+	local showBar = self:ShouldShowForCurrentSpec()
 
 	if showBar then
 		self.unit = "player"
@@ -389,6 +417,12 @@ function ShamanMaelstromWeaponBar:Setup()
 		if parent and parent.GetFrameLevel then self:SetFrameLevel((parent:GetFrameLevel() or 0) + 5) end
 	else
 		self:UnregisterEvent("UNIT_AURA")
+		if self.points then
+			for i = 1, #self.points do
+				local point = self.points[i]
+				if point and point.ResetVisuals then point:ResetVisuals() end
+			end
+		end
 	end
 
 	self:SetShown(showBar)
@@ -403,6 +437,18 @@ function ShamanMaelstromWeaponBar:OnEvent(event, ...)
 			if rb and rb.UpdateAuraPowerState then rb.UpdateAuraPowerState(info) end
 			self:UpdatePower()
 		end
+		return
+	end
+
+	if event == "PLAYER_SPECIALIZATION_CHANGED" then
+		local unit = ...
+		if unit and unit ~= "player" then return end
+		self:ScheduleSetup(0.2)
+		return
+	end
+
+	if event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" then
+		self:ScheduleSetup(0.2)
 		return
 	end
 
@@ -423,11 +469,14 @@ local function ensureBarFrame()
 	frame.spacing = frame.spacing or POINT_SPACING
 	frame._lastStacks = 0
 	frame.ignoreFramePositionManager = true
+	frame.eqolShouldShowClassResource = function(self) return self:ShouldShowForCurrentSpec() end
 
 	frame:SetScript("OnEvent", frame.OnEvent)
 	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	frame:RegisterEvent("PLAYER_TALENT_UPDATE")
 	frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	frame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+	frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 	frame:Setup()
 
 	return frame, created
@@ -440,6 +489,10 @@ local function refreshBar()
 	if not isUFPlayerEnabled() then
 		local frame = _G.ShamanMaelstromWeaponBarFrame
 		if frame then
+			if frame._setupTimer then
+				frame._setupTimer:Cancel()
+				frame._setupTimer = nil
+			end
 			frame:UnregisterEvent("UNIT_AURA")
 			frame:SetShown(false)
 		end

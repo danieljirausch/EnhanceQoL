@@ -18,6 +18,10 @@ local THRESHOLD_THICKNESS = (ResourceBars and ResourceBars.THRESHOLD_THICKNESS) 
 local THRESHOLD_DEFAULT = (ResourceBars and ResourceBars.THRESHOLD_DEFAULT) or { 1, 1, 1, 0.5 }
 local DEFAULT_THRESHOLDS = (ResourceBars and ResourceBars.DEFAULT_THRESHOLDS) or { 25, 50, 75, 90 }
 local DEFAULT_THRESHOLD_COUNT = (ResourceBars and ResourceBars.DEFAULT_THRESHOLD_COUNT) or 3
+local MAELSTROM_WEAPON_SEGMENTS = (ResourceBars and ResourceBars.MAELSTROM_WEAPON_SEGMENTS) or 5
+local MAELSTROM_WEAPON_MAX_STACKS = (ResourceBars and ResourceBars.MAELSTROM_WEAPON_MAX_STACKS) or 10
+local MAELSTROM_MID_STACK_DEFAULT = (ResourceBars and ResourceBars.MAELSTROM_WEAPON_MID_STACK_DEFAULT) or MAELSTROM_WEAPON_SEGMENTS
+local MAELSTROM_MID_STACK_MAX = math.max(1, MAELSTROM_WEAPON_MAX_STACKS - 1)
 local STAGGER_EXTRA_THRESHOLD_HIGH = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_HIGH) or 200
 local STAGGER_EXTRA_THRESHOLD_EXTREME = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_EXTREME) or 300
 local STAGGER_EXTRA_COLORS = (ResourceBars and ResourceBars.STAGGER_EXTRA_COLORS) or { high = { 0.62, 0.2, 1, 1 }, extreme = { 1, 0.2, 0.8, 1 } }
@@ -587,9 +591,9 @@ local function registerEditModeBars()
 						if not c then return end
 						c.useMaelstromTenStacks = value and true or false
 						if c.useMaelstromTenStacks then
-							c.visualSegments = 10
-						elseif c.visualSegments == 10 or c.visualSegments == nil then
-							c.visualSegments = 5
+							c.visualSegments = MAELSTROM_WEAPON_MAX_STACKS
+						elseif c.visualSegments == MAELSTROM_WEAPON_MAX_STACKS or c.visualSegments == nil then
+							c.visualSegments = MAELSTROM_WEAPON_SEGMENTS
 						end
 						queueRefresh()
 					end,
@@ -2344,7 +2348,7 @@ local function registerEditModeBars()
 
 				if barType == "MAELSTROM_WEAPON" then
 					settingsList[#settingsList + 1] = {
-						name = "Use 5-stack color",
+						name = "Use stack-threshold color",
 						kind = settingType.CheckboxColor,
 						field = "useMaelstromFiveColor",
 						default = true,
@@ -2376,7 +2380,42 @@ local function registerEditModeBars()
 					}
 
 					settingsList[#settingsList + 1] = {
-						name = "Keep 5-stack fill above 5",
+						name = "Stack threshold for color",
+						kind = settingType.Slider,
+						allowInput = true,
+						field = "maelstromMidStack",
+						minValue = 1,
+						maxValue = MAELSTROM_MID_STACK_MAX,
+						valueStep = 1,
+						default = MAELSTROM_MID_STACK_DEFAULT,
+						parentId = "colorsetting",
+						get = function()
+							local c = curSpecCfg()
+							local cur = tonumber(c and c.maelstromMidStack) or MAELSTROM_MID_STACK_DEFAULT
+							cur = math.floor(cur + 0.5)
+							if cur < 1 then cur = 1 end
+							if cur > MAELSTROM_MID_STACK_MAX then cur = MAELSTROM_MID_STACK_MAX end
+							return cur
+						end,
+						set = function(_, value)
+							local c = curSpecCfg()
+							if not c then return end
+							local new = tonumber(value) or MAELSTROM_MID_STACK_DEFAULT
+							new = math.floor(new + 0.5)
+							if new < 1 then new = 1 end
+							if new > MAELSTROM_MID_STACK_MAX then new = MAELSTROM_MID_STACK_MAX end
+							if c.maelstromMidStack == new then return end
+							c.maelstromMidStack = new
+							queueRefresh()
+						end,
+						isEnabled = function()
+							local c = curSpecCfg()
+							return c and c.useMaelstromFiveColor ~= false
+						end,
+					}
+
+					settingsList[#settingsList + 1] = {
+						name = "Carry threshold color above trigger",
 						kind = settingType.Checkbox,
 						field = "useMaelstromCarryFill",
 						default = false,
