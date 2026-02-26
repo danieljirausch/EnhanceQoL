@@ -678,6 +678,22 @@ local function eachGroupRule(placement, groupId, callback)
 	end
 end
 
+local function isRuleForClass(rule, classToken)
+	if not (rule and classToken) then return false end
+	local family = HB.GetFamilyById and HB.GetFamilyById(rule.spellFamilyId)
+	return family and family.classToken and tostring(family.classToken) == tostring(classToken)
+end
+
+local function groupHasClassRule(placement, groupId, classToken)
+	if not (placement and groupId and classToken) then return false end
+	for i = 1, #(placement.ruleOrder or EMPTY) do
+		local ruleId = placement.ruleOrder[i]
+		local rule = placement.rulesById and placement.rulesById[ruleId]
+		if rule and rule.groupId == groupId and isRuleForClass(rule, classToken) then return true end
+	end
+	return false
+end
+
 local function buildUsedFamilyMapForGroup(placement, groupId, out)
 	out = out or {}
 	wipeTable(out)
@@ -724,19 +740,21 @@ local function getFamilyLabel(familyId, withIcon)
 	return name
 end
 
-local function buildFamilyOptionsForEditor()
+local function buildFamilyOptionsForEditor(classTokenFilter)
 	local raw = HB.GetFamilyOptions and HB.GetFamilyOptions() or {}
 	local list = {}
 	for i = 1, #raw do
 		local option = raw[i]
 		local name, icon, classToken, spec = getFamilyPresentation(option.value)
-		list[#list + 1] = {
-			value = option.value,
-			label = name,
-			icon = option.icon or icon,
-			classToken = classToken or option.classToken,
-			spec = spec or option.spec,
-		}
+		if classTokenFilter == nil or (classToken and tostring(classToken) == tostring(classTokenFilter)) then
+			list[#list + 1] = {
+				value = option.value,
+				label = name,
+				icon = option.icon or icon,
+				classToken = classToken or option.classToken,
+				spec = spec or option.spec,
+			}
+		end
 	end
 	sort(list, function(a, b)
 		local al = tostring(a.label or "")
@@ -753,8 +771,8 @@ local function getClassDisplayName(classToken)
 	return tostring(LOCALIZED_CLASS_NAMES_MALE[token] or LOCALIZED_CLASS_NAMES_FEMALE[token] or token)
 end
 
-local function buildFamilyOptionsByClass()
-	local options = buildFamilyOptionsForEditor()
+local function buildFamilyOptionsByClass(classTokenFilter)
+	local options = buildFamilyOptionsForEditor(classTokenFilter)
 	local buckets, classOrder = {}, {}
 	for i = 1, #options do
 		local option = options[i]
@@ -814,14 +832,30 @@ local function getGroupLabel(placement, groupId)
 	return tostring(group.name or ("Indicator " .. tostring(groupId)))
 end
 
-local function getVisibleRuleIds(placement, groupId, out)
+local function getVisibleGroupIds(placement, out, classToken)
+	out = out or {}
+	wipeTable(out)
+	if not placement then return out end
+	for i = 1, #(placement.groupOrder or EMPTY) do
+		local groupId = placement.groupOrder[i]
+		local group = groupId and placement.groupsById and placement.groupsById[groupId]
+		if group then
+			if classToken == nil or groupHasClassRule(placement, groupId, classToken) then out[#out + 1] = groupId end
+		end
+	end
+	return out
+end
+
+local function getVisibleRuleIds(placement, groupId, out, classToken)
 	out = out or {}
 	wipeTable(out)
 	if not placement then return out end
 	for i = 1, #(placement.ruleOrder or EMPTY) do
 		local ruleId = placement.ruleOrder[i]
 		local rule = placement.rulesById and placement.rulesById[ruleId]
-		if rule and (groupId == nil or rule.groupId == groupId) then out[#out + 1] = ruleId end
+		if rule and (groupId == nil or rule.groupId == groupId) then
+			if classToken == nil or isRuleForClass(rule, classToken) then out[#out + 1] = ruleId end
+		end
 	end
 	return out
 end
@@ -1065,20 +1099,14 @@ function Editor:EnsureFrame()
 		row:Hide()
 		groupPanel.Rows[i] = row
 	end
-	groupPanel.ScrollBar = createThinListBar(groupPanel, groupPanel.RowHolder, 2,
-		function()
-			local _, placement = Editor:GetContext()
-			local count = placement and placement.groupOrder and #placement.groupOrder or 0
-			return max(0, count - GROUP_VISIBLE_ROWS)
-		end,
-		function()
-			return Editor.groupOffset or 0
-		end,
-		function(value)
-			Editor.groupOffset = roundInt(value or 0)
-			Editor:RefreshGroupList()
-		end
-	)
+	groupPanel.ScrollBar = createThinListBar(groupPanel, groupPanel.RowHolder, 2, function()
+		local _, placement = Editor:GetContext()
+		local count = placement and placement.groupOrder and #placement.groupOrder or 0
+		return max(0, count - GROUP_VISIBLE_ROWS)
+	end, function() return Editor.groupOffset or 0 end, function(value)
+		Editor.groupOffset = roundInt(value or 0)
+		Editor:RefreshGroupList()
+	end)
 	groupPanel.RowHolder:EnableMouseWheel(true)
 	groupPanel.RowHolder:SetScript("OnMouseWheel", function(_, delta)
 		if groupPanel.ScrollBar then groupPanel.ScrollBar:Step(delta) end
@@ -1151,22 +1179,17 @@ function Editor:EnsureFrame()
 		row:Hide()
 		rulePanel.Rows[i] = row
 	end
-	rulePanel.ScrollBar = createThinListBar(rulePanel, rulePanel.RowHolder, 4,
-		function()
-			local _, placement = Editor:GetContext()
-			if not placement then return 0 end
-			local visible = getVisibleRuleIds(placement, Editor.selectedGroupId, Editor._ruleScrollScratch)
-			Editor._ruleScrollScratch = visible
-			return max(0, #visible - RULE_VISIBLE_ROWS)
-		end,
-		function()
-			return Editor.ruleOffset or 0
-		end,
-		function(value)
-			Editor.ruleOffset = roundInt(value or 0)
-			Editor:RefreshRuleList()
-		end
-	)
+	rulePanel.ScrollBar = createThinListBar(rulePanel, rulePanel.RowHolder, 4, function()
+		local _, placement = Editor:GetContext()
+		if not placement then return 0 end
+		if Editor.selectedGroupId == nil then return 0 end
+		local visible = getVisibleRuleIds(placement, Editor.selectedGroupId, Editor._ruleScrollScratch)
+		Editor._ruleScrollScratch = visible
+		return max(0, #visible - RULE_VISIBLE_ROWS)
+	end, function() return Editor.ruleOffset or 0 end, function(value)
+		Editor.ruleOffset = roundInt(value or 0)
+		Editor:RefreshRuleList()
+	end)
 	rulePanel.RowHolder:EnableMouseWheel(true)
 	rulePanel.RowHolder:SetScript("OnMouseWheel", function(_, delta)
 		if rulePanel.ScrollBar then rulePanel.ScrollBar:Step(delta) end
@@ -2182,7 +2205,8 @@ function Editor:RefreshGroupList()
 		if frame.GroupPanel and frame.GroupPanel.ScrollBar and frame.GroupPanel.ScrollBar.Sync then frame.GroupPanel.ScrollBar:Sync() end
 		return
 	end
-	local order = placement.groupOrder or {}
+	local order = placement.groupOrder or EMPTY
+	if self.selectedGroupId == nil or indexOf(order, self.selectedGroupId) == nil then self.selectedGroupId = order[1] end
 	local maxOffset = max(0, #order - GROUP_VISIBLE_ROWS)
 	if (self.groupOffset or 0) > maxOffset then self.groupOffset = maxOffset end
 	if (self.groupOffset or 0) < 0 then self.groupOffset = 0 end
@@ -2233,7 +2257,11 @@ function Editor:RefreshRuleList()
 	self._ruleScratch = order
 	if self.selectedRuleId and placement.rulesById and placement.rulesById[self.selectedRuleId] then
 		local selectedRule = placement.rulesById[self.selectedRuleId]
-		if self.selectedGroupId and selectedRule.groupId ~= self.selectedGroupId then self.selectedRuleId = order[1] end
+		if self.selectedGroupId and selectedRule.groupId ~= self.selectedGroupId then
+			self.selectedRuleId = order[1]
+		elseif indexOf(order, self.selectedRuleId) == nil then
+			self.selectedRuleId = order[1]
+		end
 	elseif self.selectedRuleId ~= nil then
 		self.selectedRuleId = order[1]
 	end
@@ -2504,10 +2532,12 @@ local function ruleAppliesToPreviewKind(rule, kind)
 	return rule.appliesParty ~= false
 end
 
-local function getRuleIdsForGroup(placement, groupId, kind)
+local function getRuleIdsForGroup(placement, groupId, kind, classToken)
 	local list = {}
 	eachGroupRule(placement, groupId, function(ruleId, rule)
-		if rule and rule.enabled ~= false and ruleAppliesToPreviewKind(rule, kind) then list[#list + 1] = ruleId end
+		if rule and rule.enabled ~= false and ruleAppliesToPreviewKind(rule, kind) then
+			if classToken == nil or isRuleForClass(rule, classToken) then list[#list + 1] = ruleId end
+		end
 	end)
 	return list
 end
@@ -2519,9 +2549,9 @@ local function isPreviewRuleActive(rule)
 	return active
 end
 
-local function isPreviewGroupTintActive(placement, group, kind)
+local function isPreviewGroupTintActive(placement, group, kind, classToken)
 	if not (placement and group and group.id) then return false end
-	local ruleIds = getRuleIdsForGroup(placement, group.id, kind)
+	local ruleIds = getRuleIdsForGroup(placement, group.id, kind, classToken)
 	local ruleMatch = tostring(group.ruleMatch or "ANY"):upper()
 	if ruleMatch == "ALL" then
 		if #ruleIds == 0 then return false end
