@@ -1209,6 +1209,40 @@ function GCDBar:RegisterEditMode()
 		}
 	end
 
+	local function seedEditModeRecordFromProfile(record)
+		if type(record) ~= "table" then return end
+		record.point = self:GetAnchorPoint()
+		record.relativePoint = self:GetAnchorRelativePoint()
+		record.x = self:GetAnchorOffsetX()
+		record.y = self:GetAnchorOffsetY()
+		record.width = self:GetWidth()
+		record.height = self:GetHeight()
+		record.texture = self:GetTextureKey()
+		record.bgEnabled = self:GetBackgroundEnabled()
+		record.bgTexture = self:GetBackgroundTextureKey()
+		do
+			local r, g, b, a = self:GetBackgroundColor()
+			record.bgColor = { r = r, g = g, b = b, a = a }
+		end
+		record.borderEnabled = self:GetBorderEnabled()
+		record.borderTexture = self:GetBorderTextureKey()
+		do
+			local r, g, b, a = self:GetBorderColor()
+			record.borderColor = { r = r, g = g, b = b, a = a }
+		end
+		record.borderSize = self:GetBorderSize()
+		record.borderOffset = self:GetBorderOffset()
+		record.progressMode = self:GetProgressMode()
+		record.fillDirection = self:GetFillDirection()
+		record.anchorRelativeFrame = self:GetAnchorRelativeFrame()
+		record.anchorMatchWidth = self:GetAnchorMatchWidth()
+		record.hideInPetBattle = self:GetHideInPetBattle()
+		do
+			local r, g, b, a = self:GetColor()
+			record.color = { r = r, g = g, b = b, a = a }
+		end
+	end
+
 	EditMode:RegisterFrame(EDITMODE_ID, {
 		frame = self:EnsureFrame(),
 		title = L["GCDBar"] or "GCD Bar",
@@ -1244,7 +1278,16 @@ function GCDBar:RegisterEditMode()
 				return { r = r, g = g, b = b, a = a }
 			end)(),
 		},
-		onApply = function(_, _, data) GCDBar:ApplyLayoutData(data) end,
+		onApply = function(_, _, data)
+			if not self._eqolEditModeHydrated then
+				self._eqolEditModeHydrated = true
+				local record = data or {}
+				seedEditModeRecordFromProfile(record)
+				GCDBar:ApplyLayoutData(record)
+				return
+			end
+			GCDBar:ApplyLayoutData(data)
+		end,
 		onEnter = function() GCDBar:ShowEditModeHint(true) end,
 		onExit = function() GCDBar:ShowEditModeHint(false) end,
 		isEnabled = function() return addon.db and addon.db[DB_ENABLED] end,

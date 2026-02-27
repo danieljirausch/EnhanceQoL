@@ -2841,6 +2841,7 @@ local function registerEditModeBars()
 				height = cfg and cfg.height or heightDefault or frame:GetHeight() or 20,
 			},
 			onApply = function(_, _, data)
+				data = data or {}
 				local spec = registeredSpec or addon.variables.unitSpec
 				local activeSpec = getActiveSpecIndex()
 				if activeSpec and spec and spec ~= activeSpec then return end
@@ -2849,6 +2850,19 @@ local function registerEditModeBars()
 				specCfg[barType] = specCfg[barType] or {}
 				local bcfg = specCfg[barType]
 				bcfg.anchor = bcfg.anchor or {}
+				if not frame._eqolEditModeHydrated then
+					frame._eqolEditModeHydrated = true
+					local seedAnchor = bcfg.anchor or {}
+					local seedRelativeFrame = seedAnchor.relativeFrame or "UIParent"
+					if seedRelativeFrame == "UIParent" then
+						data.point = seedAnchor.point or data.point or anchor and anchor.point or "CENTER"
+						data.relativePoint = seedAnchor.relativePoint or data.relativePoint or anchor and anchor.relativePoint or data.point
+						data.x = seedAnchor.x ~= nil and seedAnchor.x or (data.x ~= nil and data.x or (anchor and anchor.x or 0))
+						data.y = seedAnchor.y ~= nil and seedAnchor.y or (data.y ~= nil and data.y or (anchor and anchor.y or 0))
+					end
+					data.width = bcfg.width or data.width or widthDefault or frame:GetWidth() or 200
+					data.height = bcfg.height or data.height or heightDefault or frame:GetHeight() or 20
+				end
 				if data.point then
 					local relFrame = bcfg.anchor.relativeFrame or "UIParent"
 					-- Nur UIParent-Anker von Edit Mode übernehmen; externe Anker behalten ihre Werte

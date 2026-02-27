@@ -72,10 +72,17 @@ local function FormatAnchorPoint(data)
 end
 
 local function BuildAnchorLayoutSnapshot(layoutName)
-	local layout = EditMode and EditMode:GetLayoutData(EDITMODE_ID, layoutName)
-	if layout then return CopyAnchorConfig(layout) end
 	addon.db.containerActionAnchor = FormatAnchorPoint(addon.db.containerActionAnchor)
 	return CopyAnchorConfig(addon.db.containerActionAnchor)
+end
+
+local function SeedEditModeAnchorRecord(record)
+	if type(record) ~= "table" then return end
+	local snapshot = BuildAnchorLayoutSnapshot()
+	record.point = snapshot.point or DEFAULT_ANCHOR.point
+	record.relativePoint = snapshot.relativePoint or record.point
+	record.x = snapshot.x or 0
+	record.y = snapshot.y or 0
 end
 
 local function SecureSort(a, b)
@@ -303,7 +310,18 @@ function ContainerActions:EnsureAnchor()
 			title = L["containerActionsAnchorLabel"] or "Container Button",
 			layoutDefaults = defaults,
 			isEnabled = function() return ContainerActions:IsEnabled() end,
-			onApply = function(_, layoutName, data) ContainerActions:ApplyAnchorLayout(data) end,
+			onApply = function(_, layoutName, data)
+				if not ContainerActions._eqolEditModeHydrated then
+					ContainerActions._eqolEditModeHydrated = true
+					local record = data or {}
+					SeedEditModeAnchorRecord(record)
+					if EditMode and EditMode.SetFramePosition then
+						EditMode:SetFramePosition(EDITMODE_ID, record.point or DEFAULT_ANCHOR.point, record.x or 0, record.y or 0, layoutName)
+						return
+					end
+				end
+				ContainerActions:ApplyAnchorLayout(data)
+			end,
 			settings = dropdownSetting and { dropdownSetting } or nil,
 		})
 		self.anchorRegistered = true

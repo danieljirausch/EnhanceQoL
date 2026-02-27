@@ -673,6 +673,38 @@ local function payloadHasSecureParts(payload)
 	return false
 end
 
+local function seedEditModeRecordFromPanelInfo(panel, defaults, record)
+	if type(panel) ~= "table" or type(defaults) ~= "table" or type(record) ~= "table" then return end
+	local info = panel.info or {}
+
+	record.point = info.point or defaults.point or "CENTER"
+	record.relativePoint = record.point
+	record.x = info.x or defaults.x or 0
+	record.y = info.y or defaults.y or 0
+	record.width = normalizePanelWidth(info.width, defaults.width)
+	record.height = normalizePanelHeight(info.height, defaults.height)
+	record.hideBorder = info.hideBorder and true or false
+	record.clickThrough = info.clickThrough == true
+	record.strata = normalizeStrata(info.strata, defaults.strata)
+	record.contentAnchor = normalizeContentAnchor(info.contentAnchor, defaults.contentAnchor)
+	record.streams = copyList(info.streams or defaults.streams)
+	record.streamGap = normalizeStreamGap(info.streamGap, defaults.streamGap)
+	record.fontOutline = info.fontOutline ~= false
+	record.fontShadow = info.fontShadow == true
+	record.streamFontScale = normalizeStreamFontScale(info.streamFontScale, defaults.streamFontScale)
+	record.useClassTextColor = info.useClassTextColor == true
+	record.fontFace = resolveFontFace(info.fontFace, defaults.fontFace)
+	record.backgroundTexture = normalizeMediaKey(info.backgroundTexture, defaults.backgroundTexture)
+	record.backgroundColor = normalizeColorTable(info.backgroundColor, defaults.backgroundColor)
+	record.borderTexture = normalizeMediaKey(info.borderTexture, defaults.borderTexture)
+	record.borderColor = normalizeColorTable(info.borderColor, defaults.borderColor)
+	record.borderSize = normalizeBorderSize(info.borderSize, defaults.borderSize)
+	record.borderOffset = normalizeBorderOffset(info.borderOffset, defaults.borderOffset)
+	record.showTooltips = info.showTooltips ~= false
+	record.textAlphaInCombat = normalizePercent(info.textAlphaInCombat, defaults.textAlphaInCombat)
+	record.textAlphaOutOfCombat = normalizePercent(info.textAlphaOutOfCombat, defaults.textAlphaOutOfCombat)
+end
+
 local function registerEditModePanel(panel)
 	if not EditMode or not EditMode.RegisterFrame then return end
 	if panel.editModeRegistered then
@@ -1068,7 +1100,18 @@ local function registerEditModePanel(panel)
 		frame = panel.frame,
 		title = panel.name,
 		layoutDefaults = defaults,
-		onApply = function(_, _, data) panel:ApplyEditMode(data or {}) end,
+		onApply = function(_, layoutName, data)
+			if not panel._eqolEditModeHydrated then
+				panel._eqolEditModeHydrated = true
+				local record = data or {}
+				seedEditModeRecordFromPanelInfo(panel, defaults, record)
+				if EditMode and EditMode.SetFramePosition then
+					EditMode:SetFramePosition(id, record.point or "CENTER", record.x or 0, record.y or 0, layoutName)
+					return
+				end
+			end
+			panel:ApplyEditMode(data or {})
+		end,
 		onPositionChanged = function(_, _, data) panel:UpdatePositionInfo(data) end,
 		settings = settings,
 		buttons = buttons,
@@ -1268,9 +1311,7 @@ function DataPanel.Create(id, name, existingOnly)
 	frame:SetMovable(true)
 	frame:SetResizable(true)
 	frame:EnableMouse(true)
-	if frame.SetClampedToScreen then
-		frame:SetClampedToScreen(true)
-	end
+	if frame.SetClampedToScreen then frame:SetClampedToScreen(true) end
 	local initialStrata = normalizeStrata(info.strata, frame:GetFrameStrata())
 	info.strata = initialStrata
 	if frame:GetFrameStrata() ~= initialStrata then frame:SetFrameStrata(initialStrata) end

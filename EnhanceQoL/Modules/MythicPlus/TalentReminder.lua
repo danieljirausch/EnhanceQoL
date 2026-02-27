@@ -284,15 +284,6 @@ local function shouldShowActiveBuildText()
 end
 
 local function buildActiveBuildLayoutSnapshot(layoutName)
-	local layout = EditMode and EditMode:GetLayoutData(ACTIVE_BUILD_EDITMODE_ID, layoutName)
-	if layout then
-		layout.point = layout.point or "CENTER"
-		layout.relativePoint = layout.relativePoint or layout.point
-		layout.x = layout.x or 0
-		layout.y = layout.y or 0
-		layout.size = layout.size or addon.db["talentReminderActiveBuildSize"] or 14
-		return layout
-	end
 	return {
 		point = addon.db["talentReminderActiveBuildPoint"] or "CENTER",
 		relativePoint = addon.db["talentReminderActiveBuildPoint"] or "CENTER",
@@ -300,6 +291,16 @@ local function buildActiveBuildLayoutSnapshot(layoutName)
 		y = addon.db["talentReminderActiveBuildY"] or 0,
 		size = addon.db["talentReminderActiveBuildSize"] or 14,
 	}
+end
+
+local function seedActiveBuildEditModeRecord(record)
+	if type(record) ~= "table" then return end
+	local snapshot = buildActiveBuildLayoutSnapshot()
+	record.point = snapshot.point or "CENTER"
+	record.relativePoint = snapshot.relativePoint or record.point
+	record.x = snapshot.x or 0
+	record.y = snapshot.y or 0
+	record.size = snapshot.size or 14
 end
 
 local function applyActiveBuildLayoutData(data)
@@ -405,6 +406,15 @@ local function registerActiveBuildEditMode()
 			size = "talentReminderActiveBuildSize",
 		},
 		onApply = function(_, layoutName, data)
+			if not activeBuildFrame._eqolEditModeHydrated then
+				activeBuildFrame._eqolEditModeHydrated = true
+				local record = data or {}
+				seedActiveBuildEditModeRecord(record)
+				if EditMode and EditMode.SetFramePosition then
+					EditMode:SetFramePosition(ACTIVE_BUILD_EDITMODE_ID, record.point or "CENTER", record.x or 0, record.y or 0, layoutName)
+					return
+				end
+			end
 			activeBuildApplyInProgress = true
 			applyActiveBuildLayoutData(data)
 			addon.MythicPlus.functions.updateActiveTalentText()

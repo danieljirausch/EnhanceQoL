@@ -622,6 +622,16 @@ function ActionTracker:RegisterEditMode()
 		}
 	end
 
+	local function seedEditModeRecordFromProfile(record)
+		if type(record) ~= "table" then return end
+		record.maxIcons = self:GetMaxIcons()
+		record.size = self:GetIconSize()
+		record.spacing = self:GetSpacing()
+		record.direction = self:GetDirection()
+		record.fade = self:GetFadeDuration()
+		record.showElapsed = self:GetShowElapsed()
+	end
+
 	EditMode:RegisterFrame(EDITMODE_ID, {
 		frame = self:EnsureFrame(),
 		title = L["ActionTracker"] or "Action Tracker",
@@ -637,7 +647,16 @@ function ActionTracker:RegisterEditMode()
 			fade = self:GetFadeDuration(),
 			showElapsed = self:GetShowElapsed(),
 		},
-		onApply = function(_, _, data) ActionTracker:ApplyLayoutData(data) end,
+		onApply = function(_, _, data)
+			if not self._eqolEditModeHydrated then
+				self._eqolEditModeHydrated = true
+				local record = data or {}
+				seedEditModeRecordFromProfile(record)
+				ActionTracker:ApplyLayoutData(record)
+				return
+			end
+			ActionTracker:ApplyLayoutData(data)
+		end,
 		onEnter = function() ActionTracker:ShowEditModeHint(true) end,
 		onExit = function() ActionTracker:ShowEditModeHint(false) end,
 		isEnabled = function() return addon.db and addon.db[DB_ENABLED] end,

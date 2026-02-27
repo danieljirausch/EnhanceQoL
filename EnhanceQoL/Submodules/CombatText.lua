@@ -507,6 +507,23 @@ function CombatText:RegisterEditMode()
 		}
 	end
 
+	local function seedEditModeRecordFromProfile(record)
+		if type(record) ~= "table" then return end
+		record.duration = self:GetDuration()
+		record.alwaysVisible = self:IsAlwaysVisible()
+		record.alwaysVisibleMode = self:GetAlwaysVisibleMode()
+		record.fontSize = self:GetFontSize()
+		record.fontFace = self:GetFontFace()
+		do
+			local r, g, b, a = self:GetEnterColor()
+			record.enterColor = { r = r, g = g, b = b, a = a }
+		end
+		do
+			local r, g, b, a = self:GetLeaveColor()
+			record.leaveColor = { r = r, g = g, b = b, a = a }
+		end
+	end
+
 	EditMode:RegisterFrame(EDITMODE_ID, {
 		frame = self:EnsureFrame(),
 		title = L["CombatText"] or "Combat text",
@@ -529,7 +546,16 @@ function CombatText:RegisterEditMode()
 				return { r = r, g = g, b = b, a = a }
 			end)(),
 		},
-		onApply = function(_, _, data) CombatText:ApplyLayoutData(data) end,
+		onApply = function(_, _, data)
+			if not self._eqolEditModeHydrated then
+				self._eqolEditModeHydrated = true
+				local record = data or {}
+				seedEditModeRecordFromProfile(record)
+				CombatText:ApplyLayoutData(record)
+				return
+			end
+			CombatText:ApplyLayoutData(data)
+		end,
 		onEnter = function() CombatText:ShowEditModeHint(true) end,
 		onExit = function() CombatText:ShowEditModeHint(false) end,
 		isEnabled = function() return addon.db and addon.db[DB_ENABLED] end,

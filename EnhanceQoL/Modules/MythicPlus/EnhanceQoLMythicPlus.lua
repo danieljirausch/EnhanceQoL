@@ -44,13 +44,7 @@ end
 
 local function isRaidDifficulty(d) return d == 14 or d == 15 or d == 16 or d == 17 end
 
-local function buildBRLayoutSnapshot(layoutName)
-	local layout = EditMode and EditMode:GetLayoutData(BR_EDITMODE_ID, layoutName)
-	if layout then
-		if not layout.relativePoint then layout.relativePoint = layout.point end
-		return layout
-	end
-
+local function buildBRLayoutSnapshot()
 	return {
 		point = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
 		relativePoint = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
@@ -58,6 +52,16 @@ local function buildBRLayoutSnapshot(layoutName)
 		y = addon.db["mythicPlusBRTrackerY"] or 0,
 		size = addon.db["mythicPlusBRButtonSize"] or defaultButtonSize,
 	}
+end
+
+local function seedBREditModeRecordFromProfile(record)
+	if type(record) ~= "table" then return end
+	local snapshot = buildBRLayoutSnapshot()
+	record.point = snapshot.point or "CENTER"
+	record.relativePoint = snapshot.relativePoint or record.point
+	record.x = snapshot.x or 0
+	record.y = snapshot.y or 0
+	record.size = snapshot.size or defaultButtonSize
 end
 
 local function applyBRLayoutData(data)
@@ -154,7 +158,18 @@ local function ensureBRAnchor()
 				size = "mythicPlusBRButtonSize",
 			},
 			isEnabled = function() return addon.db["mythicPlusBRTrackerEnabled"] end,
-			onApply = function(_, layoutName, data) applyBRLayoutData(data) end,
+			onApply = function(_, layoutName, data)
+				if not brAnchor._eqolEditModeHydrated then
+					brAnchor._eqolEditModeHydrated = true
+					local record = data or {}
+					seedBREditModeRecordFromProfile(record)
+					if EditMode and EditMode.SetFramePosition then
+						EditMode:SetFramePosition(BR_EDITMODE_ID, record.point or "CENTER", record.x or 0, record.y or 0, layoutName)
+						return
+					end
+				end
+				applyBRLayoutData(data)
+			end,
 			settings = settings,
 		})
 		brEditModeRegistered = true
@@ -221,6 +236,8 @@ local function createBRFrame()
 	applyBRLayoutData(layout)
 	if EditMode then EditMode:RefreshFrame(BR_EDITMODE_ID) end
 end
+
+addon.MythicPlus.functions.createBRFrame = createBRFrame
 
 ensureBRAnchor()
 

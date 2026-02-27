@@ -433,6 +433,14 @@ local function UpdateRenownToastAnchorConfig(data)
 	if data.y ~= nil then cfg.y = data.y end
 end
 
+local function seedAnchorRecordFromConfig(record, cfg)
+	if type(record) ~= "table" or type(cfg) ~= "table" then return end
+	record.point = cfg.point or record.point
+	record.relativePoint = cfg.relativePoint or cfg.point or record.point
+	record.x = cfg.x or 0
+	record.y = cfg.y or 0
+end
+
 local function GetGroupLootLayoutConfig()
 	addon.db.groupLootLayout = addon.db.groupLootLayout or {}
 	local layout = addon.db.groupLootLayout
@@ -558,7 +566,16 @@ function LootToast:RegisterToastAnchorWithEditMode(anchor)
 		title = title,
 		layoutDefaults = defaults,
 		isEnabled = function() return addon.db.enableLootToastAnchor end,
-		onApply = function(_, _, data)
+		onApply = function(_, layoutName, data)
+			if not LootToast._eqolToastAnchorHydrated then
+				LootToast._eqolToastAnchorHydrated = true
+				local record = data or {}
+				seedAnchorRecordFromConfig(record, GetToastAnchorConfig())
+				if EditMode and EditMode.SetFramePosition then
+					EditMode:SetFramePosition(TOAST_EDITMODE_ID, record.point or defaults.point, record.x or defaults.x, record.y or defaults.y, layoutName)
+					return
+				end
+			end
 			if not data then return end
 			LootToast.toastAnchorApplyingFromEditMode = true
 			UpdateToastAnchorConfig(data)
@@ -610,7 +627,16 @@ function LootToast:RegisterGroupRollAnchorWithEditMode(anchor)
 		title = title,
 		layoutDefaults = defaults,
 		isEnabled = function() return addon.db.enableGroupLootAnchor end,
-		onApply = function(_, _, data)
+		onApply = function(_, layoutName, data)
+			if not LootToast._eqolGroupRollAnchorHydrated then
+				LootToast._eqolGroupRollAnchorHydrated = true
+				local record = data or {}
+				seedAnchorRecordFromConfig(record, GetGroupRollAnchorConfig())
+				if EditMode and EditMode.SetFramePosition then
+					EditMode:SetFramePosition(GROUPROLL_EDITMODE_ID, record.point or defaults.point, record.x or defaults.x, record.y or defaults.y, layoutName)
+					return
+				end
+			end
 			if not data then return end
 			LootToast.groupRollAnchorApplyingFromEditMode = true
 			UpdateGroupRollAnchorConfig(data)
@@ -662,7 +688,16 @@ function LootToast:RegisterRenownToastAnchorWithEditMode(anchor)
 		title = title,
 		layoutDefaults = defaults,
 		isEnabled = function() return addon.db.enableMajorFactionsRenownToastAnchor end,
-		onApply = function(_, _, data)
+		onApply = function(_, layoutName, data)
+			if not LootToast._eqolRenownAnchorHydrated then
+				LootToast._eqolRenownAnchorHydrated = true
+				local record = data or {}
+				seedAnchorRecordFromConfig(record, GetRenownToastAnchorConfig())
+				if EditMode and EditMode.SetFramePosition then
+					EditMode:SetFramePosition(RENOWN_TOAST_EDITMODE_ID, record.point or defaults.point, record.x or defaults.x, record.y or defaults.y, layoutName)
+					return
+				end
+			end
 			if not data then return end
 			LootToast.renownToastAnchorApplyingFromEditMode = true
 			UpdateRenownToastAnchorConfig(data)

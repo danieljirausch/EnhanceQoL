@@ -196,6 +196,28 @@ local function applyButtonSettings()
 	end
 end
 
+local function buildReminderLayoutSnapshot()
+	local pos = addon.db["mageFoodReminderPos"] or defaultPos
+	local point = pos.point or defaultPos.point
+	local x = pos.x or defaultPos.x
+	local y = pos.y or defaultPos.y
+	local scale = addon.db["mageFoodReminderScale"] or 1
+	scale = math.floor(scale / 0.05 + 0.5) * 0.05
+	if scale < 0.1 then
+		scale = 0.1
+	elseif scale > 2.0 then
+		scale = 2.0
+	end
+	scale = tonumber(string.format("%.2f", scale))
+	return {
+		point = point,
+		relativePoint = point,
+		x = x,
+		y = y,
+		scale = scale,
+	}
+end
+
 local function createLeaveFrame()
 	removeBRFrame()
 	local anchor = ensureAnchor()
@@ -437,12 +459,13 @@ registerEditModeFrame = function()
 
 	local function performRegistration()
 		local anchor = ensureAnchor()
+		local snapshot = buildReminderLayoutSnapshot()
 		local defaults = {
-			point = defaultPos.point,
-			relativePoint = defaultPos.point,
-			x = defaultPos.x,
-			y = defaultPos.y,
-			scale = addon.db["mageFoodReminderScale"] or 1,
+			point = snapshot.point,
+			relativePoint = snapshot.relativePoint,
+			x = snapshot.x,
+			y = snapshot.y,
+			scale = snapshot.scale,
 		}
 
 		local settings
@@ -496,6 +519,25 @@ registerEditModeFrame = function()
 			title = L["mageFoodReminder"] or "Food Reminder",
 			layoutDefaults = defaults,
 			onApply = function(_, layoutName, data)
+				if not anchor._eqolEditModeHydrated then
+					anchor._eqolEditModeHydrated = true
+					local record = data or {}
+					local seed = buildReminderLayoutSnapshot()
+					record.point = seed.point
+					record.relativePoint = seed.relativePoint
+					record.x = seed.x
+					record.y = seed.y
+					record.scale = seed.scale
+					if EditMode and EditMode.SetFramePosition then
+						local okPos, errPos = pcall(EditMode.SetFramePosition, EditMode, editModeId, record.point, record.x, record.y, layoutName)
+						if not okPos and errPos then geterrorhandler()(errPos) end
+						if EditMode.SetValue then
+							local okScale, errScale = pcall(EditMode.SetValue, EditMode, editModeId, "scale", record.scale, layoutName, true)
+							if not okScale and errScale then geterrorhandler()(errScale) end
+						end
+						return
+					end
+				end
 				if not data then
 					addon.db["mageFoodReminderPos"] = CopyTable(defaultPos)
 					addon.db.mageFoodReminderScale = 1

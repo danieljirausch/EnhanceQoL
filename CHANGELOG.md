@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.1.1] - 2026-02-27
+
+### 🐛 Fixed
+
+- Edit Mode/Profile sync: Fixed multiple cases where outdated Edit Mode data could overwrite current AddOn profile values after login or `/reload`.
+- Data Panels: Fixed panel settings/position occasionally being restored from stale Edit Mode data instead of the active EQoL profile.
+- Mythic+ BR Tracker: Fixed tracker position/size resets caused by stale Edit Mode records.
+- Mythic+ Talent Reminder: Fixed Active Build text anchor/size occasionally resetting after profile migration.
+- Food Reminder: Fixed anchor/scale resets caused by old Edit Mode values being reapplied.
+- Loot Toast anchors: Fixed toast/group loot/renown anchors occasionally jumping back to outdated positions.
+- Container Actions button: Fixed anchor position being overwritten by legacy Edit Mode state.
+- GCD Bar, Action Tracker, Combat Text: Fixed startup cases where old Edit Mode payloads could reapply outdated layout/style values.
+- Resource Bars: Hardened initial Edit Mode apply so current spec/profile settings are kept as the authoritative source.
+
+---
+
 ## [8.1.0] - 2026-02-27
 
 ### ✨ Added
