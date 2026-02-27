@@ -10,6 +10,14 @@ local SHARED_STORAGE_KEY = "editModeData"
 local LEGACY_LAYOUTS_KEY = "editModeLayouts"
 local PROFILE_MIGRATION_FLAG = "_editModeDataMigratedV1"
 local ROOT_MIGRATION_FLAG = "_editModeDataMigratedAllProfilesV1"
+local POSITION_ONLY_FLAG = "_editModeDataPositionOnlyV1"
+local ROOT_POSITION_ONLY_FLAG = "_editModeDataPositionOnlyAllProfilesV1"
+local POSITION_FIELDS = {
+	point = true,
+	relativePoint = true,
+	x = true,
+	y = true,
+}
 
 local function getSelection(lib, frame)
 	if not lib or not lib.frameSelections then return nil end
@@ -71,6 +79,24 @@ local function mergeMissingFrames(target, source)
 	end
 end
 
+local function pruneRecordToPositionOnly(record)
+	if type(record) ~= "table" then return end
+	for field in pairs(record) do
+		if not POSITION_FIELDS[field] then record[field] = nil end
+	end
+end
+
+local function pruneStoreToPositionOnly(store)
+	if type(store) ~= "table" then return end
+	for id, record in pairs(store) do
+		if type(record) == "table" then
+			pruneRecordToPositionOnly(record)
+		else
+			store[id] = nil
+		end
+	end
+end
+
 local function pickPreferredLegacyLayout(layouts, preferred)
 	if preferred and type(layouts[preferred]) == "table" and next(layouts[preferred]) ~= nil then return preferred end
 	if type(layouts[DEFAULT_LAYOUT]) == "table" and next(layouts[DEFAULT_LAYOUT]) ~= nil then return DEFAULT_LAYOUT end
@@ -83,7 +109,7 @@ end
 
 function EditMode:_migrateLegacyLayoutStore(profile, preferredLayoutName)
 	if type(profile) ~= "table" then return end
-	if profile[PROFILE_MIGRATION_FLAG] and profile[LEGACY_LAYOUTS_KEY] == nil and type(profile[SHARED_STORAGE_KEY]) == "table" then return end
+	if profile[PROFILE_MIGRATION_FLAG] and profile[POSITION_ONLY_FLAG] and profile[LEGACY_LAYOUTS_KEY] == nil and type(profile[SHARED_STORAGE_KEY]) == "table" then return end
 
 	local target = profile[SHARED_STORAGE_KEY]
 	if type(target) ~= "table" then
@@ -106,19 +132,22 @@ function EditMode:_migrateLegacyLayoutStore(profile, preferredLayoutName)
 		profile[LEGACY_LAYOUTS_KEY] = nil
 	end
 
+	pruneStoreToPositionOnly(target)
+
 	profile[PROFILE_MIGRATION_FLAG] = true
+	profile[POSITION_ONLY_FLAG] = true
 end
 
-function EditMode:MigrateProfileData(profile, preferredLayoutName)
-	self:_migrateLegacyLayoutStore(profile, preferredLayoutName or self:GetActiveLayoutName())
-end
+function EditMode:MigrateProfileData(profile, preferredLayoutName) self:_migrateLegacyLayoutStore(profile, preferredLayoutName or self:GetActiveLayoutName()) end
 
 function EditMode:_migrateAllProfiles()
 	local db = _G.EnhanceQoLDB
-	if type(db) ~= "table" or db[ROOT_MIGRATION_FLAG] then return end
+	if type(db) ~= "table" then return end
+	if db[ROOT_MIGRATION_FLAG] and db[ROOT_POSITION_ONLY_FLAG] then return end
 	local profiles = db.profiles
 	if type(profiles) ~= "table" then
 		db[ROOT_MIGRATION_FLAG] = true
+		db[ROOT_POSITION_ONLY_FLAG] = true
 		return
 	end
 
@@ -128,10 +157,15 @@ function EditMode:_migrateAllProfiles()
 	end
 
 	db[ROOT_MIGRATION_FLAG] = true
+	db[ROOT_POSITION_ONLY_FLAG] = true
 end
 
 function EditMode:_ensureDB()
 	if not addon.db then return nil end
+	if self.runtimeProfileRef ~= addon.db then
+		self.runtimeProfileRef = addon.db
+		self.runtimeLayoutData = {}
+	end
 	self:_migrateAllProfiles()
 	self:_migrateLegacyLayoutStore(addon.db, self:GetActiveLayoutName())
 	addon.db[SHARED_STORAGE_KEY] = addon.db[SHARED_STORAGE_KEY] or {}
@@ -256,6 +290,35 @@ function EditMode:_applyLayoutPosition(entry, data, immediate)
 	frame:SetPoint(point, relative, relativePoint, x, y)
 end
 
+function EditMode:_seedStoredPosition(record, entry)
+	record.point = record.point or (entry and entry.defaults and entry.defaults.point) or "CENTER"
+	record.relativePoint = record.relativePoint or record.point or (entry and entry.defaults and entry.defaults.relativePoint) or "CENTER"
+	if record.x == nil then record.x = (entry and entry.defaults and entry.defaults.x) or 0 end
+	if record.y == nil then record.y = (entry and entry.defaults and entry.defaults.y) or 0 end
+end
+
+function EditMode:_writeStoredPosition(id, entry, point, relativePoint, x, y)
+	local container = self:_ensureDB()
+	if not container then return end
+	local record = container[id]
+	if type(record) ~= "table" then
+		record = {}
+		container[id] = record
+	end
+	pruneRecordToPositionOnly(record)
+	self:_seedStoredPosition(record, entry)
+
+	if point ~= nil then record.point = point end
+	if relativePoint ~= nil then
+		record.relativePoint = relativePoint
+	elseif point ~= nil then
+		record.relativePoint = point
+	end
+	if x ~= nil then record.x = x end
+	if y ~= nil then record.y = y end
+	if not record.relativePoint then record.relativePoint = record.point end
+end
+
 function EditMode:EnsureLayoutData(id, layoutName)
 	local entry = self.frames[id]
 	if not entry then return nil end
@@ -268,19 +331,37 @@ function EditMode:EnsureLayoutData(id, layoutName)
 	end
 
 	local record = container[id]
-	if not record then
+	if type(record) ~= "table" then
 		record = {}
+		container[id] = record
+	end
+	pruneRecordToPositionOnly(record)
+	self:_seedStoredPosition(record, entry)
+
+	self.runtimeLayoutData = self.runtimeLayoutData or {}
+	local runtime = self.runtimeLayoutData[id]
+	if type(runtime) ~= "table" then
+		runtime = {}
 		if entry.legacy then
 			for field, key in pairs(entry.legacy) do
 				local value = addon.db and addon.db[key]
-				if value ~= nil then record[field] = value end
+				if value ~= nil then runtime[field] = value end
 			end
 		end
-		copyDefaults(record, entry.defaults)
-		container[id] = record
+		copyDefaults(runtime, entry.defaults)
+		self.runtimeLayoutData[id] = runtime
 	end
 
-	return record
+	runtime.point = record.point or runtime.point or (entry.defaults and entry.defaults.point) or "CENTER"
+	runtime.relativePoint = record.relativePoint or runtime.relativePoint or runtime.point
+	if runtime.x == nil then runtime.x = record.x or (entry.defaults and entry.defaults.x) or 0 end
+	if runtime.y == nil then runtime.y = record.y or (entry.defaults and entry.defaults.y) or 0 end
+
+	if record.point ~= runtime.point or record.relativePoint ~= runtime.relativePoint or record.x ~= runtime.x or record.y ~= runtime.y then
+		self:_writeStoredPosition(id, entry, runtime.point, runtime.relativePoint, runtime.x, runtime.y)
+	end
+
+	return runtime
 end
 
 function EditMode:GetLayoutData(id, layoutName) return self:EnsureLayoutData(id, layoutName) end
@@ -288,11 +369,13 @@ function EditMode:GetLayoutData(id, layoutName) return self:EnsureLayoutData(id,
 function EditMode:SetFramePosition(id, point, x, y, layoutName, skipApply)
 	local data = self:EnsureLayoutData(id, layoutName)
 	if not data then return end
+	local entry = self.frames[id]
 
 	data.point = point
 	data.relativePoint = point
 	data.x = x
 	data.y = y
+	self:_writeStoredPosition(id, entry, data.point, data.relativePoint, data.x, data.y)
 
 	if not skipApply then self:ApplyLayout(id, layoutName) end
 end
@@ -300,8 +383,10 @@ end
 function EditMode:SetValue(id, field, value, layoutName, skipApply)
 	local data = self:EnsureLayoutData(id, layoutName)
 	if not data then return end
+	local entry = self.frames[id]
 
 	data[field] = value
+	if POSITION_FIELDS[field] then self:_writeStoredPosition(id, entry, data.point, data.relativePoint, data.x, data.y) end
 	if not skipApply then self:ApplyLayout(id, layoutName) end
 end
 
@@ -367,6 +452,7 @@ function EditMode:ApplyLayout(id, layoutName)
 	layoutName = self:_resolveLayoutName(layoutName)
 	local data = self:EnsureLayoutData(id, layoutName)
 	if not data then return end
+	self:_writeStoredPosition(id, entry, data.point, data.relativePoint, data.x, data.y)
 
 	if entry.managePosition ~= false then
 		local position = {
@@ -583,11 +669,11 @@ function EditMode:RegisterFrame(id, opts)
 
 	self:ApplyLayout(id, self:GetActiveLayoutName())
 	-- self.lib:AddManagerCheckbox({
-    --     label = frame.editModeName,
-    --     frames = frame,
-    --     category = "EnhanceQoL",
-    --     id = id,
-    -- })
+	--     label = frame.editModeName,
+	--     frames = frame,
+	--     category = "EnhanceQoL",
+	--     id = id,
+	-- })
 
 	return frame
 end
@@ -618,9 +704,8 @@ function EditMode:UnregisterFrame(id, purgeData)
 	end
 
 	local data = addon.db and addon.db[SHARED_STORAGE_KEY]
-	if purgeData and type(data) == "table" then
-		data[id] = nil
-	end
+	if purgeData and type(data) == "table" then data[id] = nil end
+	if self.runtimeLayoutData then self.runtimeLayoutData[id] = nil end
 
 	self.frames[id] = nil
 end

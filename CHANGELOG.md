@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.1.2] - 2026-02-27
+
+### 🐛 Fixed
+
+- Edit Mode: EQoL now only stores frame positions there. All other settings remain fully in the active AddOn profile.
+- Profile stability: Switching Blizzard Edit Mode layouts no longer overwrites EQoL frame settings with old layout data.
+
+---
+
 ## [8.1.1] - 2026-02-27
 
 ### 🐛 Fixed

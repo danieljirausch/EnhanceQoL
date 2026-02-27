@@ -394,16 +394,121 @@ function UFProfileManager._resolveUFGlobalProfile(profiles)
 	return globalName
 end
 
+function UFProfileManager._deepValueEquals(a, b, seenA, seenB)
+	local ta, tb = type(a), type(b)
+	if ta ~= tb then return false end
+	if ta ~= "table" then return a == b end
+	if a == b then return true end
+
+	seenA = seenA or {}
+	seenB = seenB or {}
+	if seenA[a] and seenB[b] then return true end
+	seenA[a] = true
+	seenB[b] = true
+
+	for key, value in pairs(a) do
+		if not UFProfileManager._deepValueEquals(value, b[key], seenA, seenB) then return false end
+	end
+	for key in pairs(b) do
+		if a[key] == nil then return false end
+	end
+	return true
+end
+
+function UFProfileManager._runtimeMatchesUFProfile(profile)
+	if type(profile) ~= "table" or type(addon.db) ~= "table" then return false end
+	for _, key in ipairs(UFProfileManager.RUNTIME_KEYS) do
+		local runtimeValue = addon.db[key]
+		local profileValue = profile[key]
+		if key == "ufUseCustomClassColors" then
+			if (runtimeValue == true) ~= (profileValue == true) then return false end
+		elseif not UFProfileManager._deepValueEquals(runtimeValue, profileValue) then
+			return false
+		end
+	end
+	return true
+end
+
+function UFProfileManager._findRuntimeMatchingUFProfileName(profiles, preferredName)
+	if type(profiles) ~= "table" then return nil end
+	if preferredName and type(preferredName) == "string" and UFProfileManager._runtimeMatchesUFProfile(profiles[preferredName]) then return preferredName end
+	local activeName = UFProfileManager._trimProfileName(UFProfileManager._activeProfileName)
+	if activeName and profiles[activeName] and UFProfileManager._runtimeMatchesUFProfile(profiles[activeName]) then return activeName end
+	for _, name in ipairs(UFProfileManager._getSortedUFProfileNames(profiles)) do
+		if UFProfileManager._runtimeMatchesUFProfile(profiles[name]) then return name end
+	end
+	return nil
+end
+
+function UFProfileManager._resolveUFSpecMappedProfileName(profiles, guid)
+	if type(profiles) ~= "table" or type(guid) ~= "string" or guid == "" then return nil end
+	local byGuid = addon.db and addon.db.ufProfileSpecKeys and addon.db.ufProfileSpecKeys[guid]
+	if type(byGuid) ~= "table" then return nil end
+	local specID = UFProfileManager._getCurrentSpecID()
+	if not specID then return nil end
+	local mapped = byGuid[specID]
+	if type(mapped) ~= "string" or mapped == "" then mapped = byGuid[tostring(specID)] end
+	mapped = UFProfileManager._trimProfileName(mapped)
+	if not mapped or not profiles[mapped] then return nil end
+	return mapped
+end
+
 function UFProfileManager._resolveUFActiveProfileName(profiles)
 	local globalName = UFProfileManager._resolveUFGlobalProfile(profiles)
 	local guid = UFProfileManager._getCurrentPlayerGUID()
-	if not guid then return globalName end
-	local activeName = UFProfileManager._trimProfileName(addon.db.ufProfileKeys and addon.db.ufProfileKeys[guid])
-	if not activeName or not profiles[activeName] then
-		activeName = globalName
-		addon.db.ufProfileKeys[guid] = activeName
+	if not guid then
+		local runtimeMatch = UFProfileManager._findRuntimeMatchingUFProfileName(profiles, globalName)
+		if runtimeMatch then return runtimeMatch, false end
+		return globalName, true
 	end
-	return activeName
+
+	local activeName = UFProfileManager._trimProfileName(addon.db.ufProfileKeys and addon.db.ufProfileKeys[guid])
+	if activeName and profiles[activeName] then return activeName, false end
+
+	local specMapped = UFProfileManager._resolveUFSpecMappedProfileName(profiles, guid)
+	if specMapped then
+		addon.db.ufProfileKeys[guid] = specMapped
+		return specMapped, false
+	end
+
+	local runtimeMatch = UFProfileManager._findRuntimeMatchingUFProfileName(profiles, globalName)
+	if runtimeMatch then
+		addon.db.ufProfileKeys[guid] = runtimeMatch
+		return runtimeMatch, false
+	end
+
+	addon.db.ufProfileKeys[guid] = globalName
+	return globalName, true
+end
+
+function UFProfileManager._seedProfileFromRuntime(profileName)
+	if type(addon.db) ~= "table" then return false end
+	local profiles = addon.db.ufProfiles
+	if type(profiles) ~= "table" then return false end
+	local profile = profiles[profileName]
+	if type(profile) ~= "table" then return false end
+	if UFProfileManager._isUFProfileBound(profileName) then return false end
+
+	local seeded = false
+	for _, key in ipairs(UFProfileManager.RUNTIME_KEYS) do
+		local runtimeValue = addon.db[key]
+		if key == "ufUseCustomClassColors" then
+			profile[key] = runtimeValue == true
+			seeded = true
+		elseif type(runtimeValue) == "table" then
+			profile[key] = UFProfileManager._copyProfileValue(runtimeValue) or {}
+			seeded = true
+		elseif runtimeValue ~= nil then
+			profile[key] = runtimeValue
+			seeded = true
+		end
+	end
+
+	if not seeded then return false end
+	profiles[profileName] = UFProfileManager._ensureUFProfilePayload(profile)
+	UFProfileManager.Debug("seed runtime into UF profile %s (first guid mapping)", tostring(profileName))
+	UFProfileManager.Trace("SEED_RUNTIME", profileName)
+	return true
 end
 
 function UFProfileManager._bindUFProfileToRuntime(profileName)
@@ -470,8 +575,9 @@ function UFProfileManager.Initialize()
 	if type(profiles) ~= "table" then return false, "NO_DB" end
 	UFProfileManager._dedupeUFProfileTables(profiles)
 	UFProfileManager._cleanUFProfileReferences(profiles)
-	local activeName = UFProfileManager._resolveUFActiveProfileName(profiles)
+	local activeName, shouldSeedFromRuntime = UFProfileManager._resolveUFActiveProfileName(profiles)
 	if not activeName or not profiles[activeName] then return false, "NO_PROFILE" end
+	if shouldSeedFromRuntime then UFProfileManager._seedProfileFromRuntime(activeName) end
 	local guid = UFProfileManager._getCurrentPlayerGUID()
 	local keyProfile = guid and addon.db.ufProfileKeys and addon.db.ufProfileKeys[guid] or nil
 	UFProfileManager.Debug("initialize guid=%s key=%s global=%s resolved=%s", tostring(guid), tostring(keyProfile), tostring(addon.db.ufProfileGlobal), tostring(activeName))

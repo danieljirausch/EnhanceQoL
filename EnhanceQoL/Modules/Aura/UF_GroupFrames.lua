@@ -18321,11 +18321,6 @@ local function buildEditModeSettings(kind, editModeId)
 	return settings
 end
 
--- Keep EditMode layout payload in sync with the current GroupFrame config.
---
--- EditMode re-applies stored layout data (onApply) on frame drag and other actions.
--- If cfg changes (for example through the copy system) without updating that payload,
--- stale values overwrite the freshly copied configuration on the next apply.
 function GF._syncGroupEditModeLayoutData(kind, editModeId, layoutName)
 	if not (kind and editModeId) then return end
 	if not (EditMode and EditMode.EnsureLayoutData and EditMode.GetActiveLayoutName) then return end
@@ -18335,27 +18330,17 @@ function GF._syncGroupEditModeLayoutData(kind, editModeId, layoutName)
 
 	local data = EditMode:EnsureLayoutData(editModeId, layoutName)
 	if type(data) ~= "table" then return end
+	local cfg = getCfg(kind)
+	local def = DEFAULTS[kind] or {}
+	local point = tostring((cfg and cfg.point) or def.point or data.point or "CENTER"):upper()
+	local relativePoint = tostring((cfg and (cfg.relativePoint or cfg.point)) or def.relativePoint or def.point or point):upper()
+	local x = roundToPixel(clampNumber((cfg and cfg.x) or def.x or data.x or 0, -4000, 4000, 0), 1)
+	local y = roundToPixel(clampNumber((cfg and cfg.y) or def.y or data.y or 0, -4000, 4000, 0), 1)
 
-	-- Reuse the same field->getter mapping the settings sheet uses.
-	local settings = buildEditModeSettings(kind, editModeId)
-	if type(settings) ~= "table" then return end
-
-	for _, setting in ipairs(settings) do
-		local field = setting and setting.field
-		local getter = setting and setting.get
-		if field and getter then
-			local ok, value = pcall(getter, layoutName)
-			if ok then
-				if type(value) == "table" then
-					data[field] = CopyTable(value)
-				else
-					data[field] = value
-				end
-			else
-				geterrorhandler()(value)
-			end
-		end
-	end
+	data.point = point
+	data.relativePoint = relativePoint
+	data.x = x
+	data.y = y
 end
 
 local function applyEditModeData(kind, data)
@@ -19224,8 +19209,6 @@ local function applyEditModeData(kind, data)
 					local current = tostring(cfg.sortMethod or ""):upper()
 					if current == "NAMELIST" or current == "CUSTOM" then cfg.sortMethod = (DEFAULTS.raid and DEFAULTS.raid.sortMethod) or "INDEX" end
 				end
-			elseif EditMode and EditMode.SetValue then
-				EditMode:SetValue(EDITMODE_IDS[kind], "customSortEnabled", custom and custom.enabled == true, nil, true)
 			end
 			if data.customSortSeparateMeleeRanged ~= nil then
 				custom.separateMeleeRanged = data.customSortSeparateMeleeRanged and true or false
@@ -19234,8 +19217,6 @@ local function applyEditModeData(kind, data)
 				else
 					custom.roleOrder = GFH.CollapseRoleOrder(custom.roleOrder)
 				end
-			elseif EditMode and EditMode.SetValue then
-				EditMode:SetValue(EDITMODE_IDS[kind], "customSortSeparateMeleeRanged", custom and custom.separateMeleeRanged == true, nil, true)
 			end
 		end
 		if data.unitsPerColumn ~= nil then
@@ -19722,18 +19703,44 @@ function GF:EnsureEditMode()
 				title = (kind == "party" and (PARTY or "Party")) or (kind == "raid" and (RAID or "Raid")) or (kind == "mt" and "Main Tank") or (kind == "ma" and "Main Assist") or tostring(kind),
 				layoutDefaults = defaults,
 				settings = buildEditModeSettings(kind, EDITMODE_IDS[kind]),
-				onApply = function(_, _, data) applyEditModeData(kind, data) end,
-				onPositionChanged = function(_, _, dataOrPoint, x, y)
-					if type(dataOrPoint) == "table" then
-						applyEditModeData(kind, dataOrPoint)
-					else
+				onApply = function(_, layoutName, data)
+					local token = addon.db
+					if anchor._eqolEditModeHydratedToken ~= token then
+						anchor._eqolEditModeHydratedToken = token
+						if GF._syncGroupEditModeLayoutData then GF._syncGroupEditModeLayoutData(kind, EDITMODE_IDS[kind], layoutName) end
+						if EditMode and EditMode.EnsureLayoutData then
+							local synced = EditMode:EnsureLayoutData(EDITMODE_IDS[kind], layoutName)
+							if type(synced) == "table" then data = synced end
+						end
+					end
+					if type(data) == "table" and (data.point or data.relativePoint or data.x ~= nil or data.y ~= nil) then
 						applyEditModeData(kind, {
+							point = data.point,
+							relativePoint = data.relativePoint,
+							x = data.x,
+							y = data.y,
+						})
+					end
+				end,
+				onPositionChanged = function(_, _, dataOrPoint, x, y)
+					local positionData
+					if type(dataOrPoint) == "table" then
+						positionData = {
+							point = dataOrPoint.point,
+							relativePoint = dataOrPoint.relativePoint,
+							x = dataOrPoint.x,
+							y = dataOrPoint.y,
+						}
+					else
+						positionData = {
 							point = dataOrPoint,
 							relativePoint = dataOrPoint,
 							x = x,
 							y = y,
-						})
+						}
 					end
+
+					if positionData.point or positionData.relativePoint or positionData.x ~= nil or positionData.y ~= nil then applyEditModeData(kind, positionData) end
 				end,
 				onEnter = function() GF:OnEnterEditMode(kind) end,
 				onExit = function() GF:OnExitEditMode(kind) end,
