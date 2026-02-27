@@ -6,6 +6,7 @@
 
 - Edit Mode: EQoL now only stores frame positions there. All other settings remain fully in the active AddOn profile.
 - Profile stability: Switching Blizzard Edit Mode layouts no longer overwrites EQoL frame settings with old layout data.
+- Craft Shopper: Fixed cases where the custom 1:n recipe tracking control did not appear in Professions and the default "Track Recipe" checkbox stayed visible.
 
 ---
 

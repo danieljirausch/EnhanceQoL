@@ -34,8 +34,11 @@ local ShowCraftShopperFrameIfNeeded -- forward declaration
 local BuildShoppingList -- forward declaration for early users
 local createCrafterMultiplyFrame -- forward declaration
 local EnsureCraftShopperProfessionsUI -- forward declaration
+local RefreshMultiplyUIState -- forward declaration
 local craftShopperCheckboxHooksInstalled = false
 local professionsFrameHooksInstalled = false
+local schematicFormHooksInstalled = false
+local schematicFormMixinHooksInstalled = false
 
 local function IsCraftShopperEnabled() return addon.db and addon.db["vendorCraftShopperEnable"] end
 
@@ -59,6 +62,8 @@ local heavyEvents = {
 	"AUCTION_HOUSE_SHOW",
 	"AUCTION_HOUSE_CLOSED",
 	"ADDON_LOADED",
+	"TRADE_SKILL_SHOW",
+	"TRADE_SKILL_CLOSE",
 }
 
 local heavyEventsRegistered = false
@@ -124,6 +129,23 @@ local function GetCurrentRecipeID()
 	return recipeID
 end
 
+local function ShouldShowMultiplyFrame()
+	if not IsCraftShopperEnabled() then return false end
+	local checkbox = GetTrackRecipeCheckbox()
+	if checkbox and checkbox:IsShown() then return true end
+	if not ProfessionsFrame or not ProfessionsFrame:IsShown() then return false end
+	if not ProfessionsFrame.CraftingPage or not ProfessionsFrame.CraftingPage:IsShown() then return false end
+
+	local form = ProfessionsFrame.CraftingPage.SchematicForm
+	if not form or not form:IsShown() then return false end
+	if not (form.currentRecipeInfo and form.currentRecipeInfo.recipeID ~= nil) then return false end
+
+	local transaction = form.GetTransaction and form:GetTransaction()
+	if transaction and transaction.HasReagentSlots and not transaction:HasReagentSlots() then return false end
+
+	return true
+end
+
 local function IsRecipeTrackedAny(recipeID)
 	if not recipeID or not C_TradeSkillUI or not C_TradeSkillUI.IsRecipeTracked then return false end
 	local ok, tracked = pcall(C_TradeSkillUI.IsRecipeTracked, recipeID, false)
@@ -149,24 +171,89 @@ local function UpdateMultiplyFrameState()
 	end
 end
 
+local function EnsureMultiplyFrameExists()
+	if _G.EQOLCrafterMultiply then return _G.EQOLCrafterMultiply end
+	if not IsCraftShopperEnabled() then return nil end
+	local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
+	if not form then return nil end
+	if createCrafterMultiplyFrame then return createCrafterMultiplyFrame() end
+end
+
+RefreshMultiplyUIState = function()
+	local checkbox = GetTrackRecipeCheckbox()
+	if checkbox and checkbox.SetAlpha then checkbox:SetAlpha(IsCraftShopperEnabled() and 0 or 1) end
+
+	local frame = _G.EQOLCrafterMultiply or EnsureMultiplyFrameExists()
+	if frame then
+		if ShouldShowMultiplyFrame() then
+			frame:Show()
+		else
+			frame:Hide()
+		end
+	end
+
+	if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+end
+
 local function HookCraftShopperCheckboxIfNeeded()
 	if craftShopperCheckboxHooksInstalled or not IsCraftShopperEnabled() then return end
 	local checkbox = GetTrackRecipeCheckbox()
 	if not checkbox or not checkbox.HookScript then return end
 
-	checkbox:HookScript("OnShow", function(self)
-		if not IsCraftShopperEnabled() then return end
-		if EQOLCrafterMultiply then EQOLCrafterMultiply:Show() end
-		self:SetAlpha(0)
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+	checkbox:HookScript("OnShow", function()
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	checkbox:HookScript("OnHide", function()
-		if not IsCraftShopperEnabled() then return end
-		if EQOLCrafterMultiply then EQOLCrafterMultiply:Hide() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	craftShopperCheckboxHooksInstalled = true
+end
+
+local function HookSchematicFormStateIfNeeded()
+	if schematicFormHooksInstalled then return end
+	local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
+	if not form then return end
+
+	if form.HookScript then
+		form:HookScript("OnShow", function()
+			if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+		end)
+		form:HookScript("OnHide", function()
+			if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+		end)
+	end
+
+	if hooksecurefunc then
+		hooksecurefunc(form, "Init", function()
+			if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+		end)
+		hooksecurefunc(form, "Refresh", function()
+			if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+		end)
+	end
+
+	schematicFormHooksInstalled = true
+end
+
+local function HookSchematicFormMixinIfNeeded()
+	if schematicFormMixinHooksInstalled then return end
+	if not hooksecurefunc or not ProfessionsRecipeSchematicFormMixin then return end
+
+	local function onSchematicUpdate(form)
+		if not IsCraftShopperEnabled() then return end
+		if not ProfessionsFrame or not ProfessionsFrame.CraftingPage or form ~= ProfessionsFrame.CraftingPage.SchematicForm then return end
+		if not _G.EQOLCrafterMultiply and createCrafterMultiplyFrame then createCrafterMultiplyFrame() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+	end
+
+	hooksecurefunc(ProfessionsRecipeSchematicFormMixin, "Init", onSchematicUpdate)
+	hooksecurefunc(ProfessionsRecipeSchematicFormMixin, "Refresh", onSchematicUpdate)
+	hooksecurefunc(ProfessionsRecipeSchematicFormMixin, "OnShow", onSchematicUpdate)
+	hooksecurefunc(ProfessionsRecipeSchematicFormMixin, "OnHide", onSchematicUpdate)
+
+	schematicFormMixinHooksInstalled = true
 end
 
 local function HookProfessionsFrameVisibilityIfNeeded()
@@ -176,14 +263,11 @@ local function HookProfessionsFrameVisibilityIfNeeded()
 	ProfessionsFrame:HookScript("OnShow", function()
 		if not IsCraftShopperEnabled() then return end
 		EnsureCraftShopperProfessionsUI()
-		local checkbox = GetTrackRecipeCheckbox()
-		if checkbox and checkbox.SetAlpha and checkbox:IsShown() then checkbox:SetAlpha(0) end
-		if EQOLCrafterMultiply and checkbox and checkbox:IsShown() then EQOLCrafterMultiply:Show() end
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	ProfessionsFrame:HookScript("OnHide", function()
-		if EQOLCrafterMultiply then EQOLCrafterMultiply:Hide() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	professionsFrameHooksInstalled = true
@@ -192,12 +276,12 @@ end
 EnsureCraftShopperProfessionsUI = function()
 	if not IsCraftShopperEnabled() then return end
 	if IsAddOnLoaded and IsAddOnLoaded("Blizzard_Professions") then
+		HookSchematicFormMixinIfNeeded()
 		HookProfessionsFrameVisibilityIfNeeded()
+		HookSchematicFormStateIfNeeded()
 		if not EQOLCrafterMultiply and createCrafterMultiplyFrame then createCrafterMultiplyFrame() end
 		HookCraftShopperCheckboxIfNeeded()
-		local checkbox = GetTrackRecipeCheckbox()
-		if checkbox and checkbox.SetAlpha and checkbox:IsShown() then checkbox:SetAlpha(0) end
-		if EQOLCrafterMultiply and ProfessionsFrame and ProfessionsFrame:IsShown() and checkbox and checkbox:IsShown() then EQOLCrafterMultiply:Show() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	else
 		f:RegisterEvent("ADDON_LOADED")
 	end
@@ -665,11 +749,7 @@ function addon.Vendor.CraftShopper.EnableCraftShopper()
 	else
 		UnregisterHeavyEvents()
 	end
-	if _G.EQOLCrafterMultiply and IsCraftShopperEnabled() then
-		if ProfessionsFrame and ProfessionsFrame:IsShown() then _G.EQOLCrafterMultiply:Show() end
-	end
-	local checkbox = GetTrackRecipeCheckbox()
-	if checkbox and checkbox.SetAlpha and checkbox:IsShown() then checkbox:SetAlpha(0) end
+	if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 end
 
 function addon.Vendor.CraftShopper.DisableCraftShopper()
@@ -762,7 +842,7 @@ createCrafterMultiplyFrame = function()
 			eb:SetText("0")
 			addToCraftShopper(eb)
 			eb:ClearFocus()
-			if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+			if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 			return
 		end
 		if eb and eb.GetText then
@@ -773,7 +853,7 @@ createCrafterMultiplyFrame = function()
 		end
 		addToCraftShopper(eb)
 		eb:ClearFocus()
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	-- Label + edit box for quantity
@@ -795,12 +875,12 @@ createCrafterMultiplyFrame = function()
 		end
 		addToCraftShopper(self)
 		self:ClearFocus()
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 	eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 	eb:SetScript("OnTextChanged", function(self, userInput)
 		if userInput and self:GetParent() then self:GetParent().autoFilled = false end
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	end)
 
 	-- Ensure sub-widgets are visible (frame visibility controlled below)
@@ -831,11 +911,7 @@ createCrafterMultiplyFrame = function()
 
 	-- Default hidden; only show when enabled and professions is visible
 	fCMF:Hide()
-	local checkbox = GetTrackRecipeCheckbox()
-	if addon.db and addon.db["vendorCraftShopperEnable"] and ProfessionsFrame:IsShown() and checkbox and checkbox:IsShown() then
-		fCMF:Show()
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
-	end
+	if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 
 	return fCMF
 end
@@ -847,6 +923,13 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
 		if IsCraftShopperEnabled() then EnsureCraftShopperProfessionsUI() end
 		-- No longer need to listen for further ADDON_LOADED
 		f:UnregisterEvent("ADDON_LOADED")
+	elseif event == "TRADE_SKILL_SHOW" then
+		if IsCraftShopperEnabled() then EnsureCraftShopperProfessionsUI() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
+	elseif event == "TRADE_SKILL_CLOSE" then
+		if _G.EQOLCrafterMultiply then _G.EQOLCrafterMultiply:Hide() end
+		local checkbox = GetTrackRecipeCheckbox()
+		if checkbox and checkbox.SetAlpha and IsCraftShopperEnabled() then checkbox:SetAlpha(1) end
 	elseif event == "TRACKED_RECIPE_UPDATE" then
 		CleanupUntrackedMultipliers()
 		if HasTrackedRecipes() then
@@ -860,7 +943,7 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
 			end
 			if addon.Vendor.CraftShopper.frame then addon.Vendor.CraftShopper.frame.frame:Hide() end
 		end
-		if UpdateMultiplyFrameState then UpdateMultiplyFrameState() end
+		if RefreshMultiplyUIState then RefreshMultiplyUIState() end
 	elseif event == "BAG_UPDATE_DELAYED" then
 		ScheduleRescan()
 	elseif event == "CRAFTINGORDERS_ORDER_PLACEMENT_RESPONSE" then
