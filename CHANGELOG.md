@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.3.1] - 2026-02-28
+
+### 🐛 Fixed
+
+- Unit Frames (Class Resource): Fixed a regression where Class Resource settings used resource IDs from all classes in the selector/visibility options. Changes now correctly apply to the active class resource again, so moving and adjusting it (anchor/offset/scale/strata/frame level) works as expected.
+
+---
+
 ## [8.3.0] - 2026-02-27
 
 ### ✨ Added
