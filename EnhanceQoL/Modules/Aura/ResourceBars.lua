@@ -82,12 +82,14 @@ local ResourcebarVars = {
 	MAELSTROM_WEAPON_SEGMENTS = 5,
 	MAELSTROM_WEAPON_MID_STACK_DEFAULT = 5,
 	MAELSTROM_WEAPON_SPELL_ID = 344179,
+	ICICLES_SPELL_ID = 205473,
 	VOID_METAMORPHOSIS_SPELL_ID = 1225789,
 	VOID_META_TALENT_SOUL_GLUTTON_SPELL_ID = 1247534,
 	COLLAPSING_STAR_SPELL_ID = 1227702,
 	DEFAULT_MAELSTROM_WEAPON_FIVE_COLOR = { 0.10, 0.85, 0.55, 1 },
 	CUSTOM_POWER_COLORS = {
 		MAELSTROM_WEAPON = { 0.15, 0.45, 1.00 },
+		ICICLES = { 0.45, 0.80, 1.00 },
 	},
 	POWER_LABELS = {},
 	AURA_POWER_CONFIG = {},
@@ -309,6 +311,7 @@ end
 
 ResourceBars.PowerLabels = {
 	MAELSTROM_WEAPON = (C_Spell.GetSpellName(RB.MAELSTROM_WEAPON_SPELL_ID)) or "Maelstrom Weapon",
+	ICICLES = (C_Spell.GetSpellName(RB.ICICLES_SPELL_ID)) or (L and L["Icicles"]) or "Icicles",
 	VOID_METAMORPHOSIS = (C_Spell.GetSpellName(RB.VOID_METAMORPHOSIS_SPELL_ID)) or "Void Metamorphosis",
 	STAGGER = (_G and _G["STAGGER"]) or "Stagger",
 }
@@ -321,6 +324,14 @@ RB.AURA_POWER_CONFIG = {
 		midColor = RB.DEFAULT_MAELSTROM_WEAPON_FIVE_COLOR,
 		useMidColorKey = "useMaelstromFiveColor",
 		midColorKey = "maelstromFiveColor",
+		useMaxColorDefault = true,
+		defaultShowSeparator = true,
+	},
+	ICICLES = {
+		spellIds = { RB.ICICLES_SPELL_ID },
+		maxStacks = 5,
+		visualSegments = 5,
+		defaultColor = { 0.45, 0.80, 1.00, 1 },
 		useMaxColorDefault = true,
 		defaultShowSeparator = true,
 	},
@@ -2687,7 +2698,7 @@ powertypeClasses = {
 	MAGE = {
 		[1] = { MAIN = "ARCANE_CHARGES", MANA = true },
 		[2] = { MAIN = "MANA" },
-		[3] = { MAIN = "MANA" },
+		[3] = { MAIN = "MANA", ICICLES = true },
 	},
 	WARLOCK = {
 		[1] = { MAIN = "SOUL_SHARDS", MANA = true },
@@ -2730,6 +2741,7 @@ classPowerTypes = {
 	"STAGGER",
 	"INSANITY",
 	"ARCANE_CHARGES",
+	"ICICLES",
 	"MANA",
 }
 
@@ -2742,6 +2754,7 @@ ResourceBars.separatorEligible = {
 	ARCANE_CHARGES = true,
 	CHI = true,
 	COMBO_POINTS = true,
+	ICICLES = true,
 	VOID_METAMORPHOSIS = true,
 	MAELSTROM_WEAPON = true,
 	RUNES = true,

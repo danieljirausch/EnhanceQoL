@@ -1087,6 +1087,23 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsCoordinatesDecimals",
+						text = L["squareMinimapStatsCoordinatesDecimals"] or "Precision (decimals)",
+						get = function() return addon.db and addon.db.squareMinimapStatsCoordinatesDecimals or 2 end,
+						set = function(value)
+							addon.db["squareMinimapStatsCoordinatesDecimals"] = math.floor((tonumber(value) or 2) + 0.5)
+							applySquareMinimapStatsNow(true)
+						end,
+						min = 0,
+						max = 3,
+						step = 1,
+						default = 2,
+						sType = "slider",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsCoordinates"),
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsCoordinatesAnchor",
 						text = L["squareMinimapStatsAnchor"] or "Anchor",
 						list = squareMinimapStatsAnchorOptions,
@@ -2167,6 +2184,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsCoordinatesFontSize = 12,
 	squareMinimapStatsCoordinatesColor = { r = 1, g = 1, b = 1, a = 1 },
 	squareMinimapStatsCoordinatesHideInInstance = true,
+	squareMinimapStatsCoordinatesDecimals = 2,
 	squareMinimapStatsCoordinatesUpdateInterval = 0.2,
 }
 
@@ -2333,6 +2351,102 @@ local function getSquareMinimapFontStringWidth(fontString)
 	return width
 end
 
+local function utf8Iter(str) return (str or ""):gmatch("[%z\1-\127\194-\244][\128-\191]*") end
+
+local function utf8Len(str)
+	local len = 0
+	for _ in utf8Iter(str) do
+		len = len + 1
+	end
+	return len
+end
+
+local function utf8Sub(str, i, j)
+	str = str or ""
+	if str == "" then return "" end
+	i = i or 1
+	j = j or -1
+	if i < 1 then i = 1 end
+	local len = utf8Len(str)
+	if j < 0 then j = len + j + 1 end
+	if j > len then j = len end
+	if i > j then return "" end
+	local pos = 1
+	local startByte, endByte
+	local idx = 0
+	for char in utf8Iter(str) do
+		idx = idx + 1
+		if idx == i then startByte = pos end
+		if idx == j then
+			endByte = pos + #char - 1
+			break
+		end
+		pos = pos + #char
+	end
+	return str:sub(startByte or 1, endByte or #str)
+end
+
+local function getSquareMinimapLocationMaxWidth(point, xOffset)
+	if not Minimap or not Minimap.GetWidth then return nil end
+	local minimapWidth = tonumber(Minimap:GetWidth()) or 0
+	if minimapWidth <= 0 then return nil end
+
+	local margin = 8
+	local anchorX
+	if point and point:find("LEFT", 1, true) then
+		anchorX = 0
+	elseif point and point:find("RIGHT", 1, true) then
+		anchorX = minimapWidth
+	else
+		anchorX = minimapWidth * 0.5
+	end
+
+	anchorX = anchorX + (tonumber(xOffset) or 0)
+	local leftSpace = anchorX - margin
+	local rightSpace = (minimapWidth - margin) - anchorX
+	local justify = getSquareMinimapStatJustify(point)
+	local maxWidth
+	if justify == "LEFT" then
+		maxWidth = rightSpace
+	elseif justify == "RIGHT" then
+		maxWidth = leftSpace
+	else
+		maxWidth = math.min(leftSpace, rightSpace) * 2
+	end
+
+	local upperBound = math.max(minimapWidth - (margin * 2), 24)
+	return clamp(maxWidth or 0, 24, upperBound)
+end
+
+local function truncateSquareMinimapTextToWidth(fontString, text, maxWidth)
+	if not fontString then return text or "" end
+	local source = tostring(text or "")
+	if source == "" or not maxWidth or maxWidth <= 0 then return source end
+
+	fontString:SetText(source)
+	if getSquareMinimapFontStringWidth(fontString) <= maxWidth then return source end
+
+	local ellipsis = "..."
+	fontString:SetText(ellipsis)
+	if getSquareMinimapFontStringWidth(fontString) > maxWidth then return "" end
+
+	local low, high = 0, utf8Len(source)
+	local best = ellipsis
+	while low <= high do
+		local mid = math.floor((low + high) / 2)
+		local prefix = utf8Sub(source, 1, mid):gsub("%s+$", "")
+		local candidate = (prefix ~= "" and (prefix .. ellipsis)) or ellipsis
+		fontString:SetText(candidate)
+		if getSquareMinimapFontStringWidth(fontString) <= maxWidth then
+			best = candidate
+			low = mid + 1
+		else
+			high = mid - 1
+		end
+	end
+	return best
+end
+
 local function ensureSquareMinimapStatFrame(statKey)
 	local state = getSquareMinimapStatsState()
 	local existing = state.frames[statKey]
@@ -2447,7 +2561,9 @@ local function getSquareMinimapCoordinatesText()
 	if not mapID then return "" end
 	local pos = C_Map.GetPlayerMapPosition(mapID, "player")
 	if not pos then return "" end
-	return string.format("%.2f, %.2f", (pos.x or 0) * 100, (pos.y or 0) * 100)
+	local decimals = math.floor(clamp(tonumber(addon.db and addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5)
+	local fmt = "%." .. tostring(decimals) .. "f, %." .. tostring(decimals) .. "f"
+	return string.format(fmt, (pos.x or 0) * 100, (pos.y or 0) * 100)
 end
 
 local function getSquareMinimapLatencySplitTexts()
@@ -2555,7 +2671,12 @@ local function updateSquareMinimapStat(statKey)
 		end
 		frame.textSecondary:Show()
 	else
-		frame.text:SetText(getSquareMinimapStatText(statKey) or "")
+		local primaryText = getSquareMinimapStatText(statKey) or ""
+		if statKey == "location" then
+			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
+			if maxWidth and maxWidth > 0 then primaryText = truncateSquareMinimapTextToWidth(frame.text, primaryText, maxWidth) end
+		end
+		frame.text:SetText(primaryText)
 	end
 
 	local primaryText = frame.text:GetText() or ""

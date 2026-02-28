@@ -4265,7 +4265,7 @@ local function buildUnitSettings(unit)
 		castWidth.isEnabled = isCastEnabled
 		list[#list + 1] = castWidth
 
-		local castHeight = slider(L["Cast bar height"] or "Cast bar height", 6, 40, 1, function() return getValue(unit, { "cast", "height" }, castDef.height or 16) end, function(val)
+		local castHeight = slider(L["Cast bar height"] or "Cast bar height", 6, 200, 1, function() return getValue(unit, { "cast", "height" }, castDef.height or 16) end, function(val)
 			setValue(unit, { "cast", "height" }, val or castDef.height or 16)
 			refresh()
 		end, castDef.height or 16, "cast", true)

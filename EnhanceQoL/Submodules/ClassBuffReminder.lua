@@ -16,7 +16,6 @@ local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local LBG = LibStub("LibButtonGlow-1.0", true)
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local issecretvalue = _G.issecretvalue
-local unpackFn = _G.unpack
 local UnitInPartyIsAI = _G.UnitInPartyIsAI
 local GetTimePreciseSec = _G.GetTimePreciseSec
 
@@ -37,13 +36,6 @@ local SAMPLE_ICON_COUNT = 5
 local AURA_FILTER_HELPFUL = "HELPFUL"
 local AURA_SLOT_BATCH_SIZE = 32
 local AURA_SLOT_SCAN_GUARD = 16
-local UNIT_AURA_REGISTER_UNITS = { "player" }
-for i = 1, 4 do
-	UNIT_AURA_REGISTER_UNITS[#UNIT_AURA_REGISTER_UNITS + 1] = "party" .. i
-end
-for i = 1, 40 do
-	UNIT_AURA_REGISTER_UNITS[#UNIT_AURA_REGISTER_UNITS + 1] = "raid" .. i
-end
 
 local DB_ENABLED = "classBuffReminderEnabled"
 local DB_SHOW_PARTY = "classBuffReminderShowParty"
@@ -299,6 +291,33 @@ local function resolveProviderPresentation(provider)
 	provider._presentationReady = true
 end
 
+local function refreshProviderSpellNameSet(provider)
+	if type(provider) ~= "table" then return end
+	if type(provider.spellIds) ~= "table" then return end
+	provider.spellNameSet = provider.spellNameSet or {}
+
+	local resolvedAny = false
+	for i = 1, #provider.spellIds do
+		local sid = normalizeSpellId(provider.spellIds[i])
+		if sid then
+			requestSpellDataLoad(sid)
+			local name = safeGetSpellName(sid)
+			if type(name) == "string" and name ~= "" then
+				provider.spellNameSet[name] = true
+				resolvedAny = true
+			end
+		end
+	end
+
+	provider.spellNameRefreshAttempts = (tonumber(provider.spellNameRefreshAttempts) or 0) + 1
+	if resolvedAny then
+		provider.spellNameSetReady = true
+		provider.spellNameRefreshAttempts = 0
+	elseif provider.spellNameRefreshAttempts >= 8 then
+		provider.spellNameSetReady = true
+	end
+end
+
 function Reminder:GetClassToken() return (addon.variables and addon.variables.unitClass) or select(2, UnitClass("player")) end
 
 function Reminder:GetProvider()
@@ -313,6 +332,7 @@ function Reminder:GetProvider()
 			if sid then provider.spellSet[sid] = true end
 		end
 	end
+	if provider.spellNameSet == nil or provider.spellNameSetReady ~= true then refreshProviderSpellNameSet(provider) end
 	if not provider.displaySpellId then provider.displaySpellId = normalizeSpellId(provider.spellIds[1]) or provider.spellIds[1] end
 	if not provider._presentationReady or provider.cachedIcon == ICON_MISSING or not provider.cachedName or provider.cachedName == provider.fallbackName then resolveProviderPresentation(provider) end
 
@@ -613,9 +633,14 @@ function Reminder:GetTrackableProviderAuraData(aura, provider)
 	if not auraId then return nil end
 
 	local spellId = normalizeSpellId(aura.spellId)
-	if not spellId or not provider.spellSet[spellId] then return nil end
+	if spellId and provider.spellSet[spellId] then return auraId, spellId end
 
-	return auraId, spellId
+	if type(provider.spellNameSet) ~= "table" or provider.spellNameSetReady ~= true then refreshProviderSpellNameSet(provider) end
+	local auraName = aura.name
+	if issecretvalue and issecretvalue(auraName) then auraName = nil end
+	if type(auraName) == "string" and auraName ~= "" and provider.spellNameSet and provider.spellNameSet[auraName] then return auraId, spellId end
+
+	return nil
 end
 
 function Reminder:AddProviderAuraToState(state, aura, provider)
@@ -1224,11 +1249,7 @@ function Reminder:RegisterEvents()
 	self.eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 	self.eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 	self.eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
-	if self.eventFrame.RegisterUnitEvent and unpackFn then
-		self.eventFrame:RegisterUnitEvent("UNIT_AURA", unpackFn(UNIT_AURA_REGISTER_UNITS))
-	else
-		self.eventFrame:RegisterEvent("UNIT_AURA")
-	end
+	self.eventFrame:RegisterEvent("UNIT_AURA")
 	self.eventFrame:SetScript("OnEvent", function(_, event, ...) Reminder:HandleEvent(event, ...) end)
 
 	self.eventsRegistered = true

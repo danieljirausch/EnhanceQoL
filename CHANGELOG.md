@@ -1,5 +1,18 @@
 # Changelog
 
+## [8.4.0] - 2026-02-28
+
+### ✨ Added
+
+- Resource Bars (Mage Frost): Added support for `Icicles` as an aura-based resource bar.
+
+### 🔄 Changed
+
+- Castbars (Unit Frames + Standalone): Increased `Cast bar height` slider maximum from `40` to `200`.
+- Square Minimap Stats: Added configurable coordinate precision (`0-3` decimals) and automatic location text truncation (`...`) to fit minimap width.
+
+---
+
 ## [8.3.2] - 2026-02-28
 
 ### 🐛 Fixed
