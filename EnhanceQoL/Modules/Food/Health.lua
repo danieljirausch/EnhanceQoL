@@ -68,32 +68,32 @@ addon.Health.healthList = {
 	{ key = "SilvermoonHealingPotion", id = 241304, requiredLevel = 81, heal = 241303, type = "potion" },
 
 	-- The War Within: Cavedweller's Delight (Qualities 1-3)
-	{ key = "CavedwellerDelight1", id = 212242, requiredLevel = 71, heal = 2574750, type = "potion", isCombatPotion = true },
-	{ key = "CavedwellerDelight2", id = 212243, requiredLevel = 71, heal = 2685000, type = "potion", isCombatPotion = true },
-	{ key = "CavedwellerDelight3", id = 212244, requiredLevel = 71, heal = 2799950, type = "potion", isCombatPotion = true },
+	{ key = "CavedwellerDelight1", id = 212242, requiredLevel = 71, heal = 42000, type = "potion", isCombatPotion = true },
+	{ key = "CavedwellerDelight2", id = 212243, requiredLevel = 71, heal = 44500, type = "potion", isCombatPotion = true },
+	{ key = "CavedwellerDelight3", id = 212244, requiredLevel = 71, heal = 47000, type = "potion", isCombatPotion = true },
 
 	-- The War Within: Invigorating Healing Potion (Qualities 1-3)
-	{ key = "InvigoratingHealingPotion1", id = 244835, requiredLevel = 71, heal = 5100000, type = "potion" },
-	{ key = "InvigoratingHealingPotion2", id = 244838, requiredLevel = 71, heal = 5300000, type = "potion" },
-	{ key = "InvigoratingHealingPotion3", id = 244839, requiredLevel = 71, heal = 6400000, type = "potion" },
+	{ key = "InvigoratingHealingPotion1", id = 244835, requiredLevel = 71, heal = 62000, type = "potion" },
+	{ key = "InvigoratingHealingPotion2", id = 244838, requiredLevel = 71, heal = 67000, type = "potion" },
+	{ key = "InvigoratingHealingPotion3", id = 244839, requiredLevel = 71, heal = 72000, type = "potion" },
 
 	-- Khaz Algar: Algari Healing Potion (Qualities 1-3)
-	{ key = "AlgariHealingPotion1", id = 211878, requiredLevel = 71, heal = 3500000, type = "potion" },
-	{ key = "AlgariHealingPotion2", id = 211879, requiredLevel = 71, heal = 3600000, type = "potion" },
-	{ key = "AlgariHealingPotion3", id = 211880, requiredLevel = 71, heal = 3800000, type = "potion" },
+	{ key = "AlgariHealingPotion1", id = 211878, requiredLevel = 71, heal = 47400, type = "potion" },
+	{ key = "AlgariHealingPotion2", id = 211879, requiredLevel = 71, heal = 49800, type = "potion" },
+	{ key = "AlgariHealingPotion3", id = 211880, requiredLevel = 71, heal = 52200, type = "potion" },
 
 	-- Dragonflight: Refreshing Healing Potion (Qualities 1-3) - kept for completeness
-	{ key = "RefreshingHealingPotion1", id = 207023, requiredLevel = 70, heal = 159194, type = "potion" },
-	{ key = "RefreshingHealingPotion2", id = 207022, requiredLevel = 70, heal = 136368, type = "potion" },
-	{ key = "RefreshingHealingPotion3", id = 207021, requiredLevel = 70, heal = 116788, type = "potion" },
+	{ key = "RefreshingHealingPotion1", id = 207023, requiredLevel = 70, heal = 32000, type = "potion" },
+	{ key = "RefreshingHealingPotion2", id = 207022, requiredLevel = 70, heal = 29000, type = "potion" },
+	{ key = "RefreshingHealingPotion3", id = 207021, requiredLevel = 70, heal = 26000, type = "potion" },
 
 	-- Dragonflight: Refreshing Healing Potion (Qualities 1-3) - kept for completeness
-	{ key = "RefreshingHealingPotion1", id = 191378, requiredLevel = 61, heal = 118950, type = "potion" },
-	{ key = "RefreshingHealingPotion2", id = 191379, requiredLevel = 61, heal = 139050, type = "potion" },
-	{ key = "RefreshingHealingPotion3", id = 191380, requiredLevel = 61, heal = 162500, type = "potion" },
+	{ key = "RefreshingHealingPotion1", id = 191378, requiredLevel = 61, heal = 24000, type = "potion" },
+	{ key = "RefreshingHealingPotion2", id = 191379, requiredLevel = 61, heal = 27000, type = "potion" },
+	{ key = "RefreshingHealingPotion3", id = 191380, requiredLevel = 61, heal = 30000, type = "potion" },
 
 	-- Shadowlands
-	{ key = "SpiritualHealingPotion", id = 171267, requiredLevel = 51, heal = 36000, type = "potion" },
+	{ key = "SpiritualHealingPotion", id = 171267, requiredLevel = 51, heal = 12000, type = "potion" },
 
 	-- Battle for Azeroth
 	{ key = "CoastalHealingPotion", id = 152615, requiredLevel = 40, heal = 8000, type = "potion" },
@@ -111,8 +111,8 @@ addon.Health.healthList = {
 	-- Wrath of the Lich King
 	{ key = "RunicHealingPotion", id = 33447, requiredLevel = 27, heal = 1200, type = "potion" },
 
-	{ key = "PotentHealingPotion", id = 258138, requiredLevel = 5, type = "potion", healFunc = function(maxHP) return GetPotentPotionHeal(maxHP or 0) end },
-	{ key = "SurvivalistsHealingPotion", id = 224021, requiredLevel = 5, type = "potion", healFunc = function(maxHP) return GetPotionHeal(maxHP or 0) end },
+	{ key = "PotentHealingPotion", id = 258138, requiredLevel = 5, heal = 1500, type = "potion" },
+	{ key = "SurvivalistsHealingPotion", id = 224021, requiredLevel = 5, heal = 750, type = "potion" },
 
 	-- Other healing items (examples; toggleable)
 	-- Add additional healing clickies here if desired
