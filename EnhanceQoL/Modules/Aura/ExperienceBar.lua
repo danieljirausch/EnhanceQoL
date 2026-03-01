@@ -101,6 +101,7 @@ local DB_HIDE_BLIZZARD_TRACKING = "xpBarHideBlizzardTracking"
 local DEFAULT_TEX = "Interface\\TargetingFrame\\UI-StatusBar"
 local BAR_SIZE_MIN = 6
 local BAR_SIZE_MAX = 2000
+local BAR_WIDTH_MAX = 5000
 local TEXT_SIZE_MIN = 8
 local TEXT_SIZE_MAX = 30
 
@@ -424,7 +425,7 @@ end
 
 function ExperienceBar:IsEnabled() return addon.db and addon.db[DB_ENABLED] == true end
 
-function ExperienceBar:GetWidth() return clamp(getValue(DB_WIDTH, defaults.width), BAR_SIZE_MIN, BAR_SIZE_MAX) end
+function ExperienceBar:GetWidth() return clamp(getValue(DB_WIDTH, defaults.width), BAR_SIZE_MIN, BAR_WIDTH_MAX) end
 
 function ExperienceBar:GetHeight() return clamp(getValue(DB_HEIGHT, defaults.height), BAR_SIZE_MIN, BAR_SIZE_MAX) end
 
@@ -1213,7 +1214,7 @@ end
 function ExperienceBar:ApplyLayoutData(data)
 	if not data or not addon.db then return end
 
-	local width = clamp(data.width or defaults.width, BAR_SIZE_MIN, BAR_SIZE_MAX)
+	local width = clamp(data.width or defaults.width, BAR_SIZE_MIN, BAR_WIDTH_MAX)
 	local height = clamp(data.height or defaults.height, BAR_SIZE_MIN, BAR_SIZE_MAX)
 	local texture = data.texture or defaults.texture
 	local r, g, b, a = normalizeColor(data.color or defaults.color, defaults.color)
@@ -1300,7 +1301,7 @@ local function applySetting(field, value)
 	local skipEditValue
 
 	if field == "width" then
-		local width = clamp(value, BAR_SIZE_MIN, BAR_SIZE_MAX)
+		local width = clamp(value, BAR_SIZE_MIN, BAR_WIDTH_MAX)
 		addon.db[DB_WIDTH] = width
 		value = width
 	elseif field == "height" then
@@ -1631,7 +1632,7 @@ function ExperienceBar:RegisterEditMode()
 				field = "width",
 				default = defaults.width,
 				minValue = BAR_SIZE_MIN,
-				maxValue = BAR_SIZE_MAX,
+				maxValue = BAR_WIDTH_MAX,
 				valueStep = 1,
 				allowInput = true,
 				get = function() return ExperienceBar:GetWidth() end,

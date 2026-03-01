@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.5.1] - 2026-03-01
+
+### 🐛 Fixed
+
+- Mythic+ (World Map Dungeon Portals): Added missing data for `Personal Key to the Arcantina`.
+- Character/Inspect Frame (Enchants): Fixed a regression where missing-enchant warnings could appear on non-enchantable slots.
+
+---
+
 ## [8.5.0] - 2026-03-01
 
 ### ✨ Added

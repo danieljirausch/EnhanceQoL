@@ -217,12 +217,11 @@ local function getEnchantDisplayMode()
 end
 
 local function shouldShowMissingEnchant(slot, link, itemLevel)
-	if
-		nil ~= addon.variables.shouldEnchantedChecks[slot]
-		and not addon.variables.shouldEnchantedChecks[slot].func(itemLevel)
-	then
-		return false
-	end
+	local hasStaticRule = addon.variables.shouldEnchanted[slot] == true
+	local dynamicRule = addon.variables.shouldEnchantedChecks[slot]
+
+	if not hasStaticRule and dynamicRule == nil then return false end
+	if dynamicRule ~= nil and not dynamicRule.func(itemLevel) then return false end
 	if slot ~= 17 then return true end
 	local _, _, _, _, _, _, _, _, itemEquipLoc = C_Item.GetItemInfoInstant(link)
 	return addon.variables.allowedEnchantTypesForOffhand[itemEquipLoc] == true
@@ -752,9 +751,7 @@ local function setIlvlText(element, slot)
 					end
 					local foundEnchant = enchantText ~= nil
 
-					if not foundEnchant and UnitLevel("player") == addon.variables.maxLevel then
-						showMissingEnchant = shouldShowMissingEnchant(slot, link, eItem:GetCurrentItemLevel())
-					end
+					if not foundEnchant and UnitLevel("player") == addon.variables.maxLevel then showMissingEnchant = shouldShowMissingEnchant(slot, link, eItem:GetCurrentItemLevel()) end
 					if element.borderGradient then
 						if showMissingEnchant and showMissingOverlay then
 							element.borderGradient:Show()
