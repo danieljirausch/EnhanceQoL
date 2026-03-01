@@ -5,6 +5,9 @@
 ### 🐛 Fixed
 
 - Action Bars (Button text): Fixed an interaction where enabling `Change keybind font` could make keybind labels visible again on bars selected in `Hide keybinds per bar`. Per-bar hide now always takes precedence.
+- Group Frames (Healer Buff Placement): Fixed Color Picker alpha/cancel behavior for indicator and per-spell square colors, so opacity now applies correctly and `Cancel` reliably restores the previous color.
+- Group Frames (Healer Buff Placement): Fixed numeric slider inputs (including `X Offset`/`Y Offset`) to stay in sync with sliders and apply precise clamped values consistently.
+- Resource Bars: Bugfix migration of settings
 
 ---
 
