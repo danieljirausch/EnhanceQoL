@@ -33,6 +33,7 @@ ExperienceBar.defaults = ExperienceBar.defaults
 		texture = "DEFAULT",
 		color = { r = 0.20, g = 0.65, b = 0.95, a = 1 }, -- no rested bonus active
 		restedColor = { r = 0.20, g = 0.85, b = 1.00, a = 1 }, -- rested bonus active
+		restedOverlayEnabled = true,
 		bgEnabled = true,
 		bgTexture = "SOLID",
 		bgColor = { r = 0, g = 0, b = 0, a = 0.45 },
@@ -69,6 +70,7 @@ local DB_HEIGHT = "xpBarHeight"
 local DB_TEXTURE = "xpBarTexture"
 local DB_COLOR = "xpBarColor"
 local DB_RESTED_COLOR = "xpBarRestedColor"
+local DB_RESTED_OVERLAY_ENABLED = "xpBarRestedOverlay"
 local DB_BG_ENABLED = "xpBarBackgroundEnabled"
 local DB_BG_TEXTURE = "xpBarBackgroundTexture"
 local DB_BG_COLOR = "xpBarBackgroundColor"
@@ -436,6 +438,8 @@ function ExperienceBar:GetColor() return normalizeColor(getValue(DB_COLOR, defau
 
 function ExperienceBar:GetRestedColor() return normalizeColor(getValue(DB_RESTED_COLOR, defaults.restedColor), defaults.restedColor) end
 
+function ExperienceBar:GetRestedOverlayEnabled() return getValue(DB_RESTED_OVERLAY_ENABLED, defaults.restedOverlayEnabled ~= false) == true end
+
 function ExperienceBar:GetBackgroundEnabled() return getValue(DB_BG_ENABLED, defaults.bgEnabled) == true end
 
 function ExperienceBar:GetBackgroundTextureKey()
@@ -693,7 +697,9 @@ end
 function ExperienceBar:ApplyCurrentFillColor(hasRested)
 	if not self.frame then return end
 	local r, g, b, a
-	if hasRested then
+	if self:GetRestedOverlayEnabled() then
+		r, g, b, a = self:GetColor()
+	elseif hasRested then
 		r, g, b, a = self:GetRestedColor()
 	else
 		r, g, b, a = self:GetColor()
@@ -703,11 +709,54 @@ function ExperienceBar:ApplyCurrentFillColor(hasRested)
 	if tex and tex.Show then tex:Show() end
 end
 
+function ExperienceBar:UpdateRestedOverlay(ctx)
+	if not (self.frame and self.frame.restedOverlay) then return end
+	local overlay = self.frame.restedOverlay
+	overlay:Hide()
+	overlay:ClearAllPoints()
+
+	if not self:GetRestedOverlayEnabled() then return end
+	if not ctx or (ctx.max or 0) <= 0 then return end
+
+	local startFraction = clamp((ctx.current or 0) / (ctx.max or 1), 0, 1)
+	local endFraction = clamp(((ctx.current or 0) + (ctx.rested or 0)) / (ctx.max or 1), 0, 1)
+	if endFraction <= startFraction then return end
+
+	local fillDirection = self:GetFillDirection()
+	local vertical = isVerticalFillDirection(fillDirection)
+	local barSize = vertical and (self.frame:GetHeight() or 0) or (self.frame:GetWidth() or 0)
+	if barSize <= 0 then return end
+
+	local startPx = startFraction * barSize
+	local endPx = endFraction * barSize
+	if endPx <= startPx then return end
+
+	local rr, rg, rb, ra = self:GetRestedColor()
+	overlay:SetVertexColor(rr or 1, rg or 1, rb or 1, ra or 1)
+
+	if fillDirection == "LEFT" then
+		overlay:SetPoint("TOPLEFT", self.frame, "TOPLEFT", startPx, 0)
+		overlay:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMLEFT", endPx, 0)
+	elseif fillDirection == "RIGHT" then
+		overlay:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -startPx, 0)
+		overlay:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMRIGHT", -endPx, 0)
+	elseif fillDirection == "UP" then
+		overlay:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 0, startPx)
+		overlay:SetPoint("TOPRIGHT", self.frame, "BOTTOMRIGHT", 0, endPx)
+	else -- DOWN
+		overlay:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -startPx)
+		overlay:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", 0, -endPx)
+	end
+
+	overlay:Show()
+end
+
 function ExperienceBar:ApplyAppearance()
 	if not self.frame then return end
 	local texture = resolveTexture(self:GetTextureKey())
 	self.frame:SetStatusBarTexture(texture)
 	self:ApplyCurrentFillColor(self._hasRested == true)
+	if self.frame.restedOverlay then self.frame.restedOverlay:SetTexture(texture) end
 
 	local fillDirection = self:GetFillDirection()
 	if self.frame.SetOrientation then self.frame:SetOrientation(isVerticalFillDirection(fillDirection) and "VERTICAL" or "HORIZONTAL") end
@@ -766,6 +815,8 @@ function ExperienceBar:ApplyAppearance()
 		self.frame.editLabel:SetFont(font, math.max(size, 11), outline)
 		self.frame.editLabel:SetTextColor(1, 0.9, 0.2, 1)
 	end
+
+	self:UpdateRestedOverlay(self._lastXPContext)
 end
 
 function ExperienceBar:ApplySize()
@@ -777,6 +828,7 @@ function ExperienceBar:ApplySize()
 	if self.frame.bg then self.frame.bg:SetAllPoints(self.frame) end
 	if self.frame.editBg then self.frame.editBg:SetAllPoints(self.frame) end
 	if self.frame.border then self.frame.border:SetAllPoints(self.frame) end
+	self:UpdateRestedOverlay(self._lastXPContext)
 end
 
 function ExperienceBar:EnsureFrame()
@@ -790,6 +842,11 @@ function ExperienceBar:EnsureFrame()
 	local bg = bar:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints(bar)
 	bar.bg = bg
+
+	local restedOverlay = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+	restedOverlay:SetAllPoints(bar)
+	restedOverlay:Hide()
+	bar.restedOverlay = restedOverlay
 
 	local editBg = bar:CreateTexture(nil, "BORDER")
 	editBg:SetAllPoints(bar)
@@ -869,9 +926,7 @@ function ExperienceBar:StartBootstrapRefresh()
 		ExperienceBar._bootstrapTries = (ExperienceBar._bootstrapTries or 0) + 1
 		ExperienceBar:UpdateXP()
 		local _, maxXP = getXPValues()
-		if maxXP > 0 or (ExperienceBar._bootstrapTries or 0) >= 32 then
-			ExperienceBar:StopBootstrapRefresh()
-		end
+		if maxXP > 0 or (ExperienceBar._bootstrapTries or 0) >= 32 then ExperienceBar:StopBootstrapRefresh() end
 	end)
 end
 
@@ -973,6 +1028,7 @@ function ExperienceBar:UpdateXP()
 
 	local restedXP = getRestedXP()
 	local ctx = buildXPContext(getPlayerLevel(), currentXP, maxXP, restedXP)
+	self._lastXPContext = ctx
 	self._hasRested = (ctx.rested or 0) > 0
 	local fraction = 0
 	if ctx.max > 0 then
@@ -988,6 +1044,7 @@ function ExperienceBar:UpdateXP()
 	self.frame:SetMinMaxValues(0, 1)
 	self.frame:SetValue(fraction)
 	self:ApplyCurrentFillColor(self._hasRested)
+	self:UpdateRestedOverlay(ctx)
 	self:UpdateTextFromContext(ctx)
 	self.frame:Show()
 	self:ApplyBlizzardTrackingVisibility()
@@ -1023,6 +1080,8 @@ function ExperienceBar:ShowEditModeHint(show)
 		local sampleLevel = getPlayerLevel()
 		if sampleLevel <= 0 then sampleLevel = 80 end
 		local sample = buildXPContext(sampleLevel, 320192, 403725, 83533)
+		self._lastXPContext = sample
+		self:UpdateRestedOverlay(sample)
 		self:UpdateTextFromContext(sample)
 		self.frame:Show()
 	else
@@ -1115,6 +1174,7 @@ function ExperienceBar:BuildLayoutRecordFromProfile()
 	record.textOutline = self:GetTextOutline()
 	record.hideInPetBattle = self:GetHideInPetBattle()
 	record.hideBlizzardTracking = self:GetHideBlizzardTracking()
+	record.restedOverlayEnabled = self:GetRestedOverlayEnabled()
 	do
 		local r, g, b, a = self:GetColor()
 		record.color = { r = r, g = g, b = b, a = a }
@@ -1191,6 +1251,8 @@ function ExperienceBar:ApplyLayoutData(data)
 	if data.hideInPetBattle ~= nil then hideInPetBattle = data.hideInPetBattle == true end
 	local hideBlizzardTracking = addon.db[DB_HIDE_BLIZZARD_TRACKING] == true
 	if data.hideBlizzardTracking ~= nil then hideBlizzardTracking = data.hideBlizzardTracking == true end
+	local restedOverlayEnabled = addon.db[DB_RESTED_OVERLAY_ENABLED] ~= false
+	if data.restedOverlayEnabled ~= nil then restedOverlayEnabled = data.restedOverlayEnabled == true end
 
 	addon.db[DB_WIDTH] = width
 	addon.db[DB_HEIGHT] = height
@@ -1224,6 +1286,7 @@ function ExperienceBar:ApplyLayoutData(data)
 	addon.db[DB_TEXT_COLOR] = { r = textR, g = textG, b = textB, a = textA }
 	addon.db[DB_HIDE_IN_PET_BATTLE] = hideInPetBattle and true or false
 	addon.db[DB_HIDE_BLIZZARD_TRACKING] = hideBlizzardTracking and true or false
+	addon.db[DB_RESTED_OVERLAY_ENABLED] = restedOverlayEnabled and true or false
 
 	self:ApplySize()
 	self:ApplyAppearance()
@@ -1256,6 +1319,10 @@ local function applySetting(field, value)
 		local r, g, b, a = normalizeColor(value, defaults.restedColor)
 		addon.db[DB_RESTED_COLOR] = { r = r, g = g, b = b, a = a }
 		value = addon.db[DB_RESTED_COLOR]
+	elseif field == "restedOverlayEnabled" then
+		local enabled = value == true
+		addon.db[DB_RESTED_OVERLAY_ENABLED] = enabled and true or false
+		value = enabled
 	elseif field == "bgEnabled" then
 		local enabled = value == true
 		addon.db[DB_BG_ENABLED] = enabled
@@ -1623,6 +1690,14 @@ function ExperienceBar:RegisterEditMode()
 				set = function(_, value) applySetting("restedColor", value) end,
 			},
 			{
+				name = L["xpBarRestedOverlayEnabled"] or "Show rested overlay segment",
+				kind = SettingType.Checkbox,
+				field = "restedOverlayEnabled",
+				default = defaults.restedOverlayEnabled ~= false,
+				get = function() return ExperienceBar:GetRestedOverlayEnabled() end,
+				set = function(_, value) applySetting("restedOverlayEnabled", value) end,
+			},
+			{
 				name = L["xpBarBackgroundEnabled"] or "Use background",
 				kind = SettingType.Checkbox,
 				field = "bgEnabled",
@@ -1897,6 +1972,7 @@ function ExperienceBar:RegisterEditMode()
 				local r, g, b, a = self:GetRestedColor()
 				return { r = r, g = g, b = b, a = a }
 			end)(),
+			restedOverlayEnabled = self:GetRestedOverlayEnabled(),
 		},
 		onApply = function(_, _, data)
 			if not self._eqolEditModeHydrated then
