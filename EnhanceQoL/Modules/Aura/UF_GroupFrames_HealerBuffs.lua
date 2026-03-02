@@ -502,6 +502,11 @@ function HB.CreateDefaultGroup(id)
 		borderSize = 2,
 		ruleMatch = RULE_MATCH_ANY,
 		iconMode = ICON_MODE_ALL,
+		showCooldownSwipe = true,
+		showCooldownEdge = true,
+		showCooldownBling = true,
+		hideCooldownText = false,
+		hideChargeText = false,
 		color = { 1, 0.82, 0.1, 0.9 },
 	}
 end
@@ -538,10 +543,40 @@ local function normalizeGroup(group, id)
 	group.borderSize = roundInt(clamp(group.borderSize, 1, 24, 2))
 	group.ruleMatch = normalizeRuleMatch(group.ruleMatch or group.matchMode or group.ruleMode)
 	group.iconMode = normalizeIconMode(group.iconMode or group.iconDisplayMode or group.iconRuleMode)
+	local showCooldownSwipe = group.showCooldownSwipe
+	if showCooldownSwipe == nil then showCooldownSwipe = group.cooldownSwipe end
+	group.showCooldownSwipe = showCooldownSwipe ~= false
+	local showCooldownEdge = group.showCooldownEdge
+	if showCooldownEdge == nil then showCooldownEdge = group.cooldownEdge end
+	if showCooldownEdge == nil then showCooldownEdge = group.drawEdge end
+	group.showCooldownEdge = showCooldownEdge ~= false
+	local showCooldownBling = group.showCooldownBling
+	if showCooldownBling == nil then showCooldownBling = group.cooldownBling end
+	if showCooldownBling == nil then showCooldownBling = group.drawBling end
+	group.showCooldownBling = showCooldownBling ~= false
+	group.hideCooldownText = group.hideCooldownText == true
+	if group.hideChargeText == nil then group.hideChargeText = group.hideStacks end
+	group.hideChargeText = group.hideChargeText == true
+	local cooldownTextSize = clamp(group.cooldownTextSize or group.cooldownSize or group.cooldownFontSizeOverride, 6, 64, nil)
+	if cooldownTextSize ~= nil then cooldownTextSize = roundInt(cooldownTextSize) end
+	group.cooldownTextSize = cooldownTextSize
+	local chargeTextSize = clamp(group.chargeTextSize or group.chargeSize or group.countFontSizeOverride, 6, 64, nil)
+	if chargeTextSize ~= nil then chargeTextSize = roundInt(chargeTextSize) end
+	group.chargeTextSize = chargeTextSize
 	group.matchMode = nil
 	group.ruleMode = nil
 	group.iconDisplayMode = nil
 	group.iconRuleMode = nil
+	group.cooldownSwipe = nil
+	group.cooldownEdge = nil
+	group.cooldownBling = nil
+	group.drawEdge = nil
+	group.drawBling = nil
+	group.hideStacks = nil
+	group.cooldownSize = nil
+	group.chargeSize = nil
+	group.cooldownFontSizeOverride = nil
+	group.countFontSizeOverride = nil
 	group.color = normalizeColor(group.color, { 1, 0.82, 0.1, 0.9 })
 	return group
 end
@@ -1236,6 +1271,13 @@ local function getAuraStyleForGroup(state, cfg, group)
 		group.size,
 		group.spacing,
 		ac.showTooltip == false and 0 or 1,
+		group.showCooldownSwipe == false and 0 or 1,
+		group.showCooldownEdge == false and 0 or 1,
+		group.showCooldownBling == false and 0 or 1,
+		group.hideCooldownText == true and 1 or 0,
+		group.hideChargeText == true and 1 or 0,
+		tostring(group.cooldownTextSize),
+		tostring(group.chargeTextSize),
 		ac.showCooldown == false and 0 or 1,
 		tostring(ac.showCooldownText),
 		tostring(ac.cooldownAnchor),
@@ -1254,18 +1296,41 @@ local function getAuraStyleForGroup(state, cfg, group)
 	styleCache.size = group.size
 	styleCache.padding = group.spacing
 	styleCache.showTooltip = ac.showTooltip ~= false
+	styleCache.showCooldownSwipe = group.showCooldownSwipe ~= false
+	styleCache.showCooldownEdge = group.showCooldownEdge ~= false
+	styleCache.showCooldownBling = group.showCooldownBling ~= false
 	styleCache.showCooldown = ac.showCooldown ~= false
-	if ac.showCooldownText ~= nil then styleCache.showCooldownText = ac.showCooldownText end
-	if ac.showStacks ~= nil then styleCache.showStacks = ac.showStacks end
+	if group.hideCooldownText == true then
+		styleCache.showCooldownText = false
+	elseif ac.showCooldownText ~= nil then
+		styleCache.showCooldownText = ac.showCooldownText
+	else
+		styleCache.showCooldownText = nil
+	end
+	if group.hideChargeText == true then
+		styleCache.showStacks = false
+	elseif ac.showStacks ~= nil then
+		styleCache.showStacks = ac.showStacks
+	else
+		styleCache.showStacks = nil
+	end
 	styleCache.cooldownAnchor = ac.cooldownAnchor
 	styleCache.cooldownOffset = ac.cooldownOffset
 	styleCache.cooldownFont = ac.cooldownFont
-	styleCache.cooldownFontSize = ac.cooldownFontSize
+	if group.cooldownTextSize ~= nil then
+		styleCache.cooldownFontSize = group.cooldownTextSize
+	else
+		styleCache.cooldownFontSize = ac.cooldownFontSize
+	end
 	styleCache.cooldownFontOutline = ac.cooldownFontOutline
 	styleCache.countAnchor = ac.countAnchor
 	styleCache.countOffset = ac.countOffset
 	styleCache.countFont = ac.countFont
-	styleCache.countFontSize = ac.countFontSize
+	if group.chargeTextSize ~= nil then
+		styleCache.countFontSize = group.chargeTextSize
+	else
+		styleCache.countFontSize = ac.countFontSize
+	end
 	styleCache.countFontOutline = ac.countFontOutline
 	styleCache.showDR = false
 	styleCache._eqolStyleHash = key
@@ -1399,6 +1464,21 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 		local button = buttons[index]
 		if not button then button = AuraUtil.ensureAuraButton(container, buttons, index, style) end
 		if not button then break end
+		local drawCooldownSwipe = style.showCooldownSwipe ~= false
+		if button.cd and button._hbDrawCooldownSwipe ~= drawCooldownSwipe then
+			button._hbDrawCooldownSwipe = drawCooldownSwipe
+			if button.cd.SetDrawSwipe then button.cd:SetDrawSwipe(drawCooldownSwipe) end
+		end
+		local drawCooldownEdge = style.showCooldownEdge ~= false
+		if button.cd and button._hbDrawCooldownEdge ~= drawCooldownEdge then
+			button._hbDrawCooldownEdge = drawCooldownEdge
+			if button.cd.SetDrawEdge then button.cd:SetDrawEdge(drawCooldownEdge) end
+		end
+		local drawCooldownBling = style.showCooldownBling ~= false
+		if button.cd and button._hbDrawCooldownBling ~= drawCooldownBling then
+			button._hbDrawCooldownBling = drawCooldownBling
+			if button.cd.SetDrawBling then button.cd:SetDrawBling(drawCooldownBling) end
+		end
 		local familyChanged = changedFamilies and familyId and changedFamilies[familyId] == true
 		if familyChanged or button._hbAuraInstance ~= auraInstanceId or button._hbStyleKey ~= styleHash then
 			AuraUtil.applyAuraToButton(button, aura, style, false, unitToken)

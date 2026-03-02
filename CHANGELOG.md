@@ -1,5 +1,18 @@
 # Changelog
 
+## [8.7.0] - 2026-03-02
+
+### ✨ Added
+
+- Mythic+ (World Map Dungeon Portals): Added `Abundant Beacon`.
+
+### 🐛 Fixed
+
+- Health Macro: Updated outdated post-squish heal values for older health potions so current Midnight potions are prioritized correctly.
+- Health Macro: Corrected `Algari Healing Potion` ranking values (`211878`, `211879`, `211880`) to match current in-game magnitudes.
+
+---
+
 ## [8.6.0] - 2026-03-01
 
 ### ✨ Added
@@ -12,6 +25,7 @@
 - Group Frames (Healer Buff Placement): Fixed Color Picker alpha/cancel behavior for indicator and per-spell square colors, so opacity now applies correctly and `Cancel` reliably restores the previous color.
 - Group Frames (Healer Buff Placement): Fixed numeric slider inputs (including `X Offset`/`Y Offset`) to stay in sync with sliders and apply precise clamped values consistently.
 - Resource Bars: Bugfix migration of settings
+- Tooltips (Unit / Modifier refresh): Fixed taint/secret-value errors while updating visible unit tooltips on modifier key changes.
 
 ---
 

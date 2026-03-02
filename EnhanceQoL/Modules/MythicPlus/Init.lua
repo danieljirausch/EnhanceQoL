@@ -471,6 +471,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			[1254572] = { text = "MT", cId = { [558] = true }, mapID = 2511, locID = 2424, x = 0.6329, y = 0.1549, zoneID = 2511 },
 			-- [1254580] = { text = "DON", mapID = 2514, locID = 2437, x = 0.2969, y = 0.8454, zoneID = 2514 },
 			[1254400] = { text = "WRS", cId = { [557] = true }, mapID = 2494, locID = 2395, x = 0.3543, y = 0.7908, zoneID = 2494 },
+			[1271425] = { text = "ABUN", isItem = true, itemID = 252607, icon = 1362642, locID = 2437, x = 0.31263855520737, y = 0.26260265863074, zoneID = 2437 }, -- Abundont Beacon
 			[1259190] = { text = "SMC", isClassTP = "MAGE", locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Teleport: Silvermoon City
 			[1259194] = { text = "SMC", isMagePortal = true, locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Portal: Silvermoon City
 			[1255801] = { text = "ARC", isToy = true, toyID = 253629, isHearthstone = true, icon = 7322718, locID = 2541, x = 0.50215210538362, y = 0.755379994799, zoneID = 2541 }, -- Personal Key to the Arcantina

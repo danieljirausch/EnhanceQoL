@@ -42,6 +42,20 @@ local function safeMatch(text, pattern)
 	return string.match(text, pattern)
 end
 
+local function secureInvoke(func, ...)
+	func(...)
+	return true
+end
+
+local function safeSecureCall(func, ...)
+	if not func then return false end
+	if securecallfunction then
+		return securecallfunction(secureInvoke, func, ...) == true
+	end
+	local ok = pcall(func, ...)
+	return ok
+end
+
 local function GetUnitTokenFromTooltip(tt)
 	local hadTooltipUnit = false
 	if not tt then return nil, hadTooltipUnit end
@@ -496,21 +510,26 @@ local function ResolveTooltipUnit(tooltip)
 	return nil
 end
 
+local function IsModifierTooltipRefreshNeeded()
+	local db = addon.db
+	if not db then return false end
+	if db["TooltipHideOverrideEnabled"] then return true end
+	if db["TooltipShowMythicScore"] and db["TooltipMythicScoreRequireModifier"] then return true end
+	if db["TooltipUnitInspectRequireModifier"] and (db["TooltipUnitShowSpec"] or db["TooltipUnitShowItemLevel"]) then return true end
+	return false
+end
+
 local function RefreshVisibleUnitTooltipForModifier()
+	if not IsModifierTooltipRefreshNeeded() then return end
+	if isTooltipRestricted() then return end
 	if not GameTooltip or not GameTooltip.IsShown or not GameTooltip:IsShown() then return end
 	if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return end
 	local unit, hadTooltipUnit = GetUnitTokenFromTooltip(GameTooltip)
-	if not hadTooltipUnit or not unit or not UnitExists(unit) then return end
+	if not hadTooltipUnit or not unit or isSecret(unit) or not UnitExists(unit) then return end
 
-	if GameTooltip.RefreshData then
-		local ok = pcall(GameTooltip.RefreshData, GameTooltip)
-		if ok then return end
-	end
+	if GameTooltip.RefreshData and safeSecureCall(GameTooltip.RefreshData, GameTooltip) then return end
 
-	if GameTooltip.SetUnit then
-		GameTooltip:SetUnit(unit)
-		GameTooltip:Show()
-	end
+	if GameTooltip.SetUnit and safeSecureCall(GameTooltip.SetUnit, GameTooltip, unit) then GameTooltip:Show() end
 end
 
 local fModifierTooltipRefresh = CreateFrame("Frame")

@@ -1451,7 +1451,11 @@ function Editor:EnsureFrame()
 	controls.MaxLabel, controls.MaxCount, controls.MaxValue = createSettingSlider(controls.PerRowLabel, tr("UFGroupHealerBuffEditorMax", "Max"), 0, 40, 1)
 	controls.SpacingLabel, controls.Spacing, controls.SpacingValue = createSettingSlider(controls.MaxLabel, tr("UFGroupHealerBuffEditorSpacing", "Spacing"), 0, 20, 1)
 	controls.SizeLabel, controls.Size, controls.SizeValue = createSettingSlider(controls.SpacingLabel, tr("UFGroupHealerBuffEditorIconSize", "Icon Size"), 4, 64, 1)
-	controls.XLabel, controls.XOffset, controls.XValue = createSettingSlider(controls.SizeLabel, tr("UFGroupHealerBuffEditorXOffset", "X Offset"), -200, 200, 1)
+	controls.CooldownTextSizeLabel, controls.CooldownTextSize, controls.CooldownTextSizeValue =
+		createSettingSlider(controls.SizeLabel, tr("UFGroupHealerBuffEditorCooldownTextSize", "Cooldown Size"), 6, 64, 1)
+	controls.ChargeTextSizeLabel, controls.ChargeTextSize, controls.ChargeTextSizeValue =
+		createSettingSlider(controls.CooldownTextSizeLabel, tr("UFGroupHealerBuffEditorChargeTextSize", "Charge Size"), 6, 64, 1)
+	controls.XLabel, controls.XOffset, controls.XValue = createSettingSlider(controls.ChargeTextSizeLabel, tr("UFGroupHealerBuffEditorXOffset", "X Offset"), -200, 200, 1)
 	controls.YLabel, controls.YOffset, controls.YValue = createSettingSlider(controls.XLabel, tr("UFGroupHealerBuffEditorYOffset", "Y Offset"), -200, 200, 1)
 	controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue = createSettingSlider(controls.YLabel, tr("UFGroupHealerBuffEditorBarThickness", "Bar Thickness"), 1, 64, 1)
 	controls.InsetLabel, controls.Inset, controls.InsetValue = createSettingSlider(controls.ThicknessLabel, tr("UFGroupHealerBuffEditorInset", "Inset"), 0, 40, 1)
@@ -1461,19 +1465,31 @@ function Editor:EnsureFrame()
 	controls.ColorLabel:SetPoint("TOPLEFT", controls.BorderSizeLabel, "BOTTOMLEFT", 0, -22)
 	controls.ColorLabel:SetText(tr("UFGroupHealerBuffEditorColor", "Color"))
 	controls.ColorButton = createColorSwatchButton(groupControlParent, 26)
-	controls.ColorButton:SetPoint("TOPLEFT", controls.ColorLabel, "TOPRIGHT", 10, -2)
+	controls.ColorButton:SetPoint("LEFT", controls.ColorLabel, "RIGHT", 10, 0)
 	controls.ColorSwatch = controls.ColorButton.ColorSwatch
 	controls.ColorButton.ColorSwatch = controls.ColorSwatch
 	controls.ColorButton._eqolColorSwatch = controls.ColorSwatch
+	controls.CooldownSwipe = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownSwipe", "Cooldown Swipe"))
+	controls.CooldownSwipe:SetPoint("TOPLEFT", controls.ColorLabel, "BOTTOMLEFT", -4, -8)
+	controls.CooldownEdge = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownEdge", "Draw Edge"))
+	controls.CooldownEdge:SetPoint("TOPLEFT", controls.CooldownSwipe, "BOTTOMLEFT", 0, -4)
+	controls.CooldownBling = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownBling", "Draw Bling"))
+	controls.CooldownBling:SetPoint("TOPLEFT", controls.CooldownEdge, "BOTTOMLEFT", 0, -4)
+	controls.HideCooldownText = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorHideCooldownText", "Hide Cooldown Text"))
+	controls.HideCooldownText:SetPoint("TOPLEFT", controls.CooldownBling, "BOTTOMLEFT", 0, -4)
+	controls.HideChargeText = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorHideChargeText", "Hide Charge Text"))
+	controls.HideChargeText:SetPoint("TOPLEFT", controls.HideCooldownText, "BOTTOMLEFT", 0, -4)
 	groupControlContent:SetHeight(340)
 
 	local function layoutGroupControlRows()
 		local LABEL_X = 8
 		local CONTROL_X = 84
+		local SLIDER_X = CONTROL_X + 28
 		local FIRST_ROW_Y = -8
 		local GAP_DROPDOWN = 20
 		local GAP_SLIDER = 20
 		local GAP_COLOR = 20
+		local GAP_CHECK = 16
 		local prevLabel
 		local lastBottom
 
@@ -1510,7 +1526,7 @@ function Editor:EnsureFrame()
 			if not (label:IsShown() and slider:IsShown() and valueText:IsShown()) then return end
 			beginRow(label, GAP_SLIDER)
 			slider:ClearAllPoints()
-			slider:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 8)
+			slider:SetPoint("TOPLEFT", label, "TOPLEFT", SLIDER_X - LABEL_X, 8)
 			valueText:ClearAllPoints()
 			valueText:SetPoint("LEFT", slider, "RIGHT", 14, 0)
 			includeBottom(slider)
@@ -1521,8 +1537,22 @@ function Editor:EnsureFrame()
 			if not (label:IsShown() and button:IsShown()) then return end
 			beginRow(label, GAP_COLOR)
 			button:ClearAllPoints()
-			button:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 0)
+			button:SetPoint("LEFT", label, "RIGHT", 10, 0)
 			includeBottom(button)
+		end
+
+		local function placeCheck(check, anchorControl, xOffset, yOffset)
+			if not (check and check:IsShown()) then return end
+			check:ClearAllPoints()
+			if anchorControl and anchorControl:IsShown() then
+				check:SetPoint("TOPLEFT", anchorControl, "BOTTOMLEFT", xOffset or 0, yOffset or -4)
+			elseif prevLabel then
+				check:SetPoint("TOPLEFT", prevLabel, "BOTTOMLEFT", 0, -GAP_CHECK)
+			else
+				check:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", LABEL_X, FIRST_ROW_Y)
+			end
+			prevLabel = check
+			includeBottom(check)
 		end
 
 		placeDropdown(controls.GroupAnchorLabel, controls.GroupAnchor)
@@ -1533,12 +1563,31 @@ function Editor:EnsureFrame()
 		placeSlider(controls.MaxLabel, controls.MaxCount, controls.MaxValue)
 		placeSlider(controls.SpacingLabel, controls.Spacing, controls.SpacingValue)
 		placeSlider(controls.SizeLabel, controls.Size, controls.SizeValue)
+		placeSlider(controls.CooldownTextSizeLabel, controls.CooldownTextSize, controls.CooldownTextSizeValue)
+		placeSlider(controls.ChargeTextSizeLabel, controls.ChargeTextSize, controls.ChargeTextSizeValue)
 		placeSlider(controls.XLabel, controls.XOffset, controls.XValue)
 		placeSlider(controls.YLabel, controls.YOffset, controls.YValue)
 		placeSlider(controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue)
 		placeSlider(controls.InsetLabel, controls.Inset, controls.InsetValue)
 		placeSlider(controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue)
 		placeColor(controls.ColorLabel, controls.ColorButton)
+		local cooldownAnchor = controls.ColorLabel
+		if not (cooldownAnchor and cooldownAnchor:IsShown()) then
+			if controls.YLabel and controls.YLabel:IsShown() then
+				cooldownAnchor = controls.YLabel
+			elseif controls.XLabel and controls.XLabel:IsShown() then
+				cooldownAnchor = controls.XLabel
+			elseif controls.YOffset and controls.YOffset:IsShown() then
+				cooldownAnchor = controls.YOffset
+			elseif controls.XOffset and controls.XOffset:IsShown() then
+				cooldownAnchor = controls.XOffset
+			end
+		end
+		placeCheck(controls.CooldownSwipe, cooldownAnchor, -4, -8)
+		placeCheck(controls.CooldownEdge, controls.CooldownSwipe, 0, -4)
+		placeCheck(controls.CooldownBling, controls.CooldownEdge, 0, -4)
+		placeCheck(controls.HideCooldownText, controls.CooldownBling, 0, -4)
+		placeCheck(controls.HideChargeText, controls.HideCooldownText, 0, -4)
 
 		local top = controls.GroupNameLabel:GetTop()
 		local bottom = lastBottom and lastBottom:GetBottom()
@@ -1581,7 +1630,7 @@ function Editor:EnsureFrame()
 	controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
 	controls.RuleColorLabel:SetText(tr("UFGroupHealerBuffEditorSpellColor", "Spell Color"))
 	controls.RuleColorButton = createColorSwatchButton(settingsPanel, 24)
-	controls.RuleColorButton:SetPoint("TOPLEFT", controls.RuleColorLabel, "TOPRIGHT", 10, -2)
+	controls.RuleColorButton:SetPoint("LEFT", controls.RuleColorLabel, "RIGHT", 10, 0)
 	controls.RuleColorLabel:Hide()
 	controls.RuleColorButton:Hide()
 
@@ -2134,6 +2183,8 @@ function Editor:EnsureFrame()
 	updateGroupFromSlider("max", controls.MaxCount, controls.MaxValue, 0, 40, 1)
 	updateGroupFromSlider("spacing", controls.Spacing, controls.SpacingValue, 0, 20, 1)
 	updateGroupFromSlider("size", controls.Size, controls.SizeValue, 4, 64, 1)
+	updateGroupFromSlider("cooldownTextSize", controls.CooldownTextSize, controls.CooldownTextSizeValue, 6, 64, 1)
+	updateGroupFromSlider("chargeTextSize", controls.ChargeTextSize, controls.ChargeTextSizeValue, 6, 64, 1)
 	updateGroupFromSlider("x", controls.XOffset, controls.XValue, -200, 200, 1)
 	updateGroupFromSlider("y", controls.YOffset, controls.YValue, -200, 200, 1)
 	updateGroupFromSlider("barThickness", controls.Thickness, controls.ThicknessValue, 1, 64, 1)
@@ -2204,6 +2255,66 @@ function Editor:EnsureFrame()
 			Editor:RefreshPreview()
 			Editor:QueueRuntimeRefresh()
 		end)
+	end)
+
+	controls.CooldownSwipe:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.showCooldownSwipe = self:GetChecked() ~= false
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
+	controls.CooldownEdge:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.showCooldownEdge = self:GetChecked() ~= false
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
+	controls.CooldownBling:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.showCooldownBling = self:GetChecked() ~= false
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
+	controls.HideCooldownText:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.hideCooldownText = self:GetChecked() == true
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
+	controls.HideChargeText:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.hideChargeText = self:GetChecked() == true
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
 	end)
 
 	controls.RuleColorButton:SetScript("OnClick", function(_, mouseButton)
@@ -2468,14 +2579,14 @@ function Editor:RefreshRuleControls()
 
 	controls.RuleColorLabel:ClearAllPoints()
 	if showTintRuleMatch then
-		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -12)
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -16)
 	elseif showIconRuleMode then
-		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -12)
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -16)
 	else
-		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
+		controls.RuleColorLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
 	end
 	controls.RuleColorButton:ClearAllPoints()
-	controls.RuleColorButton:SetPoint("TOPLEFT", controls.RuleColorLabel, "TOPRIGHT", 10, -2)
+	controls.RuleColorButton:SetPoint("LEFT", controls.RuleColorLabel, "RIGHT", 10, 0)
 	setControlVisible(controls.RuleColorLabel, showRuleColor)
 	setControlVisible(controls.RuleColorButton, showRuleColor)
 	setControlEnabled(controls.RuleColorButton, showRuleColor and rule ~= nil)
@@ -2491,13 +2602,13 @@ function Editor:RefreshRuleControls()
 
 	controls.RuleInfo:ClearAllPoints()
 	if showRuleColor then
-		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleColorLabel, "BOTTOMLEFT", 0, -10)
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleColorLabel, "BOTTOMLEFT", 0, -20)
 	elseif showTintRuleMatch then
-		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -10)
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleMatchLabel, "BOTTOMLEFT", 0, -12)
 	elseif showIconRuleMode then
-		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -10)
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -12)
 	else
-		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -12)
 	end
 	controls.RuleInfo:SetPoint("RIGHT", frame.SettingsPanel, "RIGHT", -14, 0)
 
@@ -2539,8 +2650,9 @@ end
 function Editor:RefreshGroupControls()
 	local frame = self:EnsureFrame()
 	local controls = frame.Controls
-	local _, placement = self:GetContext()
+	local cfg, placement = self:GetContext()
 	local group = placement and self.selectedGroupId and placement.groupsById and placement.groupsById[self.selectedGroupId] or nil
+	local ac = cfg and cfg.auras and cfg.auras.buff or EMPTY
 
 	local function setFieldState(label, control, visible, enabled)
 		setControlVisible(label, visible)
@@ -2562,6 +2674,12 @@ function Editor:RefreshGroupControls()
 		setControlEnabled(controls.ColorButton, enabled and visible)
 	end
 
+	local function setCheckState(control, visible, enabled, checked)
+		setControlVisible(control, visible)
+		setControlEnabled(control, enabled and visible)
+		if control and control.SetChecked then control:SetChecked(checked == true) end
+	end
+
 	self._controlUpdateLock = true
 	setControlVisible(controls.GroupStyleLabel, false)
 	setControlVisible(controls.GroupStyleValue, false)
@@ -2578,6 +2696,9 @@ function Editor:RefreshGroupControls()
 		local showInset = style == "BAR" or style == "BORDER"
 		local showBorder = style == "BORDER"
 		local showColor = style == "SQUARE" or style == "BAR" or style == "BORDER" or style == "TINT"
+		local showCooldownSwipe = style == "ICON" or style == "SQUARE"
+		local showCooldownDrawOptions = style == "ICON" or style == "SQUARE"
+		local showTextSizeOverrides = style == "ICON" or style == "SQUARE"
 
 		controls.GroupName:SetText(group.name or "")
 		setDropdown(controls.GroupAnchor, HB.ANCHOR_OPTIONS, group.anchorPoint or "CENTER", controls.GroupAnchor._eqolOnSelect)
@@ -2597,6 +2718,20 @@ function Editor:RefreshGroupControls()
 		controls.SpacingValue:SetText(tostring(group.spacing or 0))
 		controls.Size:SetValue(group.size or 16)
 		controls.SizeValue:SetText(tostring(group.size or 16))
+		local cooldownTextSize = tonumber(group.cooldownTextSize)
+		if cooldownTextSize == nil then cooldownTextSize = tonumber(ac.cooldownFontSize) or 12 end
+		if cooldownTextSize < 6 then cooldownTextSize = 6 end
+		if cooldownTextSize > 64 then cooldownTextSize = 64 end
+		cooldownTextSize = roundInt(cooldownTextSize)
+		controls.CooldownTextSize:SetValue(cooldownTextSize)
+		controls.CooldownTextSizeValue:SetText(tostring(cooldownTextSize))
+		local chargeTextSize = tonumber(group.chargeTextSize)
+		if chargeTextSize == nil then chargeTextSize = tonumber(ac.countFontSize) or 14 end
+		if chargeTextSize < 6 then chargeTextSize = 6 end
+		if chargeTextSize > 64 then chargeTextSize = 64 end
+		chargeTextSize = roundInt(chargeTextSize)
+		controls.ChargeTextSize:SetValue(chargeTextSize)
+		controls.ChargeTextSizeValue:SetText(tostring(chargeTextSize))
 		controls.XOffset:SetValue(group.x or 0)
 		controls.XValue:SetText(tostring(group.x or 0))
 		controls.YOffset:SetValue(group.y or 0)
@@ -2609,6 +2744,11 @@ function Editor:RefreshGroupControls()
 		controls.BorderSizeValue:SetText(tostring(group.borderSize or 2))
 
 		group.color = group.color or { 1, 0.82, 0.1, 0.9 }
+		if group.showCooldownSwipe == nil then group.showCooldownSwipe = true end
+		if group.showCooldownEdge == nil then group.showCooldownEdge = true end
+		if group.showCooldownBling == nil then group.showCooldownBling = true end
+		if group.hideCooldownText == nil then group.hideCooldownText = false end
+		if group.hideChargeText == nil then group.hideChargeText = false end
 		setColorPreview(controls.ColorButton, group.color)
 
 		setControlEnabled(controls.GroupName, true)
@@ -2619,12 +2759,19 @@ function Editor:RefreshGroupControls()
 		setSliderState(controls.MaxLabel, controls.MaxCount, controls.MaxValue, showGrid, true)
 		setSliderState(controls.SpacingLabel, controls.Spacing, controls.SpacingValue, showGrid, true)
 		setSliderState(controls.SizeLabel, controls.Size, controls.SizeValue, showSize, true)
+		setSliderState(controls.CooldownTextSizeLabel, controls.CooldownTextSize, controls.CooldownTextSizeValue, showTextSizeOverrides, true)
+		setSliderState(controls.ChargeTextSizeLabel, controls.ChargeTextSize, controls.ChargeTextSizeValue, showTextSizeOverrides, true)
 		setSliderState(controls.XLabel, controls.XOffset, controls.XValue, showOffsets, true)
 		setSliderState(controls.YLabel, controls.YOffset, controls.YValue, showOffsets, true)
 		setSliderState(controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue, showBar, true)
 		setSliderState(controls.InsetLabel, controls.Inset, controls.InsetValue, showInset, true)
 		setSliderState(controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue, showBorder, true)
 		setColorState(showColor, true)
+		setCheckState(controls.CooldownSwipe, showCooldownSwipe, true, group.showCooldownSwipe ~= false)
+		setCheckState(controls.CooldownEdge, showCooldownDrawOptions, true, group.showCooldownEdge ~= false)
+		setCheckState(controls.CooldownBling, showCooldownDrawOptions, true, group.showCooldownBling ~= false)
+		setCheckState(controls.HideCooldownText, showCooldownDrawOptions, true, group.hideCooldownText == true)
+		setCheckState(controls.HideChargeText, showCooldownDrawOptions, true, group.hideChargeText == true)
 	else
 		controls.GroupName:SetText("")
 		setControlEnabled(controls.GroupName, false)
@@ -2635,12 +2782,19 @@ function Editor:RefreshGroupControls()
 		setSliderState(controls.MaxLabel, controls.MaxCount, controls.MaxValue, false, false)
 		setSliderState(controls.SpacingLabel, controls.Spacing, controls.SpacingValue, false, false)
 		setSliderState(controls.SizeLabel, controls.Size, controls.SizeValue, false, false)
+		setSliderState(controls.CooldownTextSizeLabel, controls.CooldownTextSize, controls.CooldownTextSizeValue, false, false)
+		setSliderState(controls.ChargeTextSizeLabel, controls.ChargeTextSize, controls.ChargeTextSizeValue, false, false)
 		setSliderState(controls.XLabel, controls.XOffset, controls.XValue, false, false)
 		setSliderState(controls.YLabel, controls.YOffset, controls.YValue, false, false)
 		setSliderState(controls.ThicknessLabel, controls.Thickness, controls.ThicknessValue, false, false)
 		setSliderState(controls.InsetLabel, controls.Inset, controls.InsetValue, false, false)
 		setSliderState(controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue, false, false)
 		setColorState(false, false)
+		setCheckState(controls.CooldownSwipe, false, false, false)
+		setCheckState(controls.CooldownEdge, false, false, false)
+		setCheckState(controls.CooldownBling, false, false, false)
+		setCheckState(controls.HideCooldownText, false, false, false)
+		setCheckState(controls.HideChargeText, false, false, false)
 		setColorPreview(controls.ColorButton, { 1, 1, 1, 1 })
 	end
 	self._controlUpdateLock = nil
