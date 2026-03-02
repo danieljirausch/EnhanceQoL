@@ -2428,8 +2428,6 @@ local function setActionBarVisibilityWatcherEnabled(watcher, enabled)
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_INTERRUPTED", "player")
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_CHANNEL_START", "player")
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_CHANNEL_STOP", "player")
-		SafeRegisterUnitEvent(watcher, "UNIT_HEALTH", "player")
-		SafeRegisterUnitEvent(watcher, "UNIT_MAXHEALTH", "player")
 		watcher._eqolEventsRegistered = true
 	else
 		if not watcher._eqolEventsRegistered then return end
