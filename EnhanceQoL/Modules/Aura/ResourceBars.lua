@@ -4685,6 +4685,8 @@ local visibilityLogic = {
 	},
 	ruleMapCache = nil,
 	optionsCache = nil,
+	sortedRuleKeysCache = nil,
+	driverCache = setmetatable({}, { __mode = "k" }),
 }
 
 function visibilityLogic:CopySelectionMap(selection)
@@ -4713,7 +4715,26 @@ function visibilityLogic:GetRuleMap()
 		if option and option.value and option.value ~= "MOUSEOVER" then allowed[option.value] = true end
 	end
 	self.ruleMapCache = allowed
+	self.sortedRuleKeysCache = nil
 	return allowed
+end
+
+function visibilityLogic:GetSortedRuleKeys()
+	local cached = self.sortedRuleKeysCache
+	if cached then return cached end
+	local keys = {}
+	local ruleMap = self:GetRuleMap()
+	for key in pairs(ruleMap) do
+		keys[#keys + 1] = key
+	end
+	table.sort(keys, function(a, b)
+		local left = tostring(a or "")
+		local right = tostring(b or "")
+		if strcmputf8i then return strcmputf8i(left, right) < 0 end
+		return left:lower() < right:lower()
+	end)
+	self.sortedRuleKeysCache = keys
+	return keys
 end
 
 function visibilityLogic:NormalizeConfig(config, legacyCfg)
@@ -4938,22 +4959,57 @@ end
 
 function visibilityLogic:BuildDriver(cfg)
 	cfg = cfg or {}
-	local visibilityCfg = self:NormalizeConfig(cfg.visibility, cfg)
-	if visibilityCfg == nil then
-		local shouldHideOutOfCombat = ResourceBars.ShouldHideOutOfCombat and ResourceBars.ShouldHideOutOfCombat(cfg)
-		local shouldHideMounted = ResourceBars.ShouldHideMounted and ResourceBars.ShouldHideMounted(cfg)
-		if shouldHideOutOfCombat or shouldHideMounted then
-			visibilityCfg = {}
-			if shouldHideOutOfCombat then visibilityCfg.ALWAYS_IN_COMBAT = true end
-			if shouldHideMounted then visibilityCfg.PLAYER_NOT_MOUNTED = true end
-		end
-	end
+	local shouldHideOutOfCombat = ResourceBars.ShouldHideOutOfCombat and ResourceBars.ShouldHideOutOfCombat(cfg)
+	local shouldHideMounted = ResourceBars.ShouldHideMounted and ResourceBars.ShouldHideMounted(cfg)
 	local hideVehicle = ResourceBars.ShouldHideInVehicle and ResourceBars.ShouldHideInVehicle(cfg)
 	local hidePetBattle = ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg)
 	local visibilityUseAnd = cfg.visibilityMatchAll == true
-	if visibilityCfg and visibilityCfg.ALWAYS_HIDDEN then return "hide", false, visibilityCfg end
-	if self:UsesManualRules(visibilityCfg, visibilityUseAnd) then return nil, true, visibilityCfg end
-	if not visibilityCfg and not hideVehicle and not hidePetBattle then return nil, false, visibilityCfg end
+
+	-- Cache driver generation by a compact signature of visibility-relevant config.
+	local function hashStep(hash, value) return ((hash * 131) + value) % 2147483647 end
+	local driverSignature = 17
+	if visibilityUseAnd then driverSignature = hashStep(driverSignature, 1) end
+	if hideVehicle then driverSignature = hashStep(driverSignature, 2) end
+	if hidePetBattle then driverSignature = hashStep(driverSignature, 3) end
+	if shouldHideOutOfCombat then driverSignature = hashStep(driverSignature, 4) end
+	if shouldHideMounted then driverSignature = hashStep(driverSignature, 5) end
+	if cfg.visibilityExplicit == true then driverSignature = hashStep(driverSignature, 6) end
+	local unitClass = tostring(addon.variables and addon.variables.unitClass or "")
+	for i = 1, #unitClass do
+		driverSignature = hashStep(driverSignature, unitClass:byte(i))
+	end
+	local rawVisibility = type(cfg.visibility) == "table" and cfg.visibility or nil
+	if rawVisibility then
+		local sortedKeys = self:GetSortedRuleKeys()
+		for i = 1, #sortedKeys do
+			local key = sortedKeys[i]
+			if rawVisibility[key] == true then driverSignature = hashStep(driverSignature, 100 + i) end
+		end
+	end
+
+	local cached = self.driverCache and self.driverCache[cfg]
+	if cached and cached.signature == driverSignature then
+		return cached.expr, cached.usesManualVisibility, cached.visibilityCfg
+	end
+
+	local visibilityCfg = self:NormalizeConfig(cfg.visibility, cfg)
+	if visibilityCfg == nil and (shouldHideOutOfCombat or shouldHideMounted) then
+		visibilityCfg = {}
+		if shouldHideOutOfCombat then visibilityCfg.ALWAYS_IN_COMBAT = true end
+		if shouldHideMounted then visibilityCfg.PLAYER_NOT_MOUNTED = true end
+	end
+	if visibilityCfg and visibilityCfg.ALWAYS_HIDDEN then
+		self.driverCache[cfg] = { signature = driverSignature, expr = "hide", usesManualVisibility = false, visibilityCfg = visibilityCfg }
+		return "hide", false, visibilityCfg
+	end
+	if self:UsesManualRules(visibilityCfg, visibilityUseAnd) then
+		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = true, visibilityCfg = visibilityCfg }
+		return nil, true, visibilityCfg
+	end
+	if not visibilityCfg and not hideVehicle and not hidePetBattle then
+		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = false, visibilityCfg = visibilityCfg }
+		return nil, false, visibilityCfg
+	end
 
 	local clauses, seen = {}, {}
 	local showRuleCount = 0
@@ -4995,7 +5051,9 @@ function visibilityLogic:BuildDriver(cfg)
 	else
 		clauses[#clauses + 1] = "show"
 	end
-	return table.concat(clauses, "; "), false, visibilityCfg
+	local expr = table.concat(clauses, "; ")
+	self.driverCache[cfg] = { signature = driverSignature, expr = expr, usesManualVisibility = false, visibilityCfg = visibilityCfg }
+	return expr, false, visibilityCfg
 end
 
 function visibilityLogic:IsPetBattleActive()

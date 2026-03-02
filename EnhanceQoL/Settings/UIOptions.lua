@@ -1250,6 +1250,7 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("xpBarTextFont", xpDefaults.textFont or "DEFAULT")
 	addon.functions.InitDBValue("xpBarTextOutline", xpDefaults.textOutline or "OUTLINE")
 	addon.functions.InitDBValue("xpBarTextColor", xpDefaults.textColor or { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("xpBarTextAbbreviateNumbers", xpDefaults.abbreviateNumbers == true)
 	addon.functions.InitDBValue("xpBarHideInPetBattle", xpDefaults.hideInPetBattle == true)
 	addon.functions.InitDBValue("xpBarHideBlizzardTracking", xpDefaults.hideBlizzardTracking ~= false)
 

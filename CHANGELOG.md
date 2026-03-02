@@ -11,6 +11,7 @@
 - Group Frames (Healer Buff Placement): Added `Loop Live Preview` toggle in the editor.
 - Visibility & Fading (Frames): Added a `Minimap` visibility rule entry with rule options `Always out of combat` and `Always hidden`.
 - Unit Frames / Castbars: Added a separate `Backdrop texture` selector (SharedMedia statusbar) for `Health`, `Power`, and `Cast` backdrops, including Standalone Castbar and Group Frames.
+- Data Panels (Bag Space): Added `Current/Max` display mode and `Ignore components bag` option.
 
 ### 🔄 Changed
 

@@ -58,6 +58,7 @@ ExperienceBar.defaults = ExperienceBar.defaults
 		textFont = "DEFAULT",
 		textOutline = "OUTLINE",
 		textColor = { r = 1, g = 1, b = 1, a = 1 },
+		abbreviateNumbers = false,
 		hideInPetBattle = false,
 		hideBlizzardTracking = true,
 	}
@@ -95,6 +96,7 @@ local DB_TEXT_SIZE = "xpBarTextSize"
 local DB_TEXT_FONT = "xpBarTextFont"
 local DB_TEXT_OUTLINE = "xpBarTextOutline"
 local DB_TEXT_COLOR = "xpBarTextColor"
+local DB_TEXT_ABBREVIATE_NUMBERS = "xpBarTextAbbreviateNumbers"
 local DB_HIDE_IN_PET_BATTLE = "xpBarHideInPetBattle"
 local DB_HIDE_BLIZZARD_TRACKING = "xpBarHideBlizzardTracking"
 
@@ -432,8 +434,9 @@ local function getRestedXP()
 	return normalizeXPValue(rested)
 end
 
-local function formatNumber(value)
+local function formatNumber(value, abbreviateNumbers)
 	value = math.floor((tonumber(value) or 0) + 0.5)
+	if abbreviateNumbers and AbbreviateNumbers then return AbbreviateNumbers(value) end
 	if BreakUpLargeNumbers then return BreakUpLargeNumbers(value) end
 	return tostring(value)
 end
@@ -445,6 +448,12 @@ local function formatShortNumber(value)
 	if value >= 1000000 then return trim(string.format("%.1fM", value / 1000000)) end
 	if value >= 1000 then return trim(string.format("%.1fK", value / 1000)) end
 	return tostring(math.floor(value + 0.5))
+end
+
+local function formatRateNumber(value, abbreviateNumbers)
+	value = math.floor((tonumber(value) or 0) + 0.5)
+	if abbreviateNumbers and AbbreviateNumbers then return AbbreviateNumbers(value) end
+	return formatShortNumber(value)
 end
 
 local function formatDurationShort(seconds)
@@ -491,6 +500,39 @@ local function buildXPContext(level, current, maximum, rested)
 	}
 end
 
+function ExperienceBar:BuildPreviewContext()
+	local sampleLevel = getPlayerLevel()
+	if sampleLevel <= 0 then sampleLevel = 80 end
+	local sample = buildXPContext(sampleLevel, 320192, 403725, 83533)
+	sample.timeThisLevelSeconds = (6 * 3600) + (23 * 60)
+	sample.gainedThisLevel = sample.current or 0
+	sample.xpPerHour = 50123
+	if sample.xpPerHour > 0 and (sample.remaining or 0) > 0 then
+		sample.etaLevelSeconds = ((sample.remaining or 0) / sample.xpPerHour) * 3600
+	else
+		sample.etaLevelSeconds = nil
+	end
+	return sample
+end
+
+function ExperienceBar:UpdatePreviewSample()
+	if not self.frame then return end
+	local sample = self:BuildPreviewContext()
+	local maxXP = sample.max or 0
+	if maxXP <= 0 then maxXP = 1 end
+	local currentXP = sample.current or 0
+	if currentXP < 0 then currentXP = 0 end
+	if currentXP > maxXP then currentXP = maxXP end
+	self._hasRested = (sample.rested or 0) > 0
+	self:ApplyCurrentFillColor(self._hasRested)
+	self.frame:SetMinMaxValues(0, maxXP)
+	self.frame:SetValue(currentXP)
+	self._lastXPContext = sample
+	self:UpdateRestedOverlay(sample)
+	self:UpdateTextFromContext(sample)
+	self.frame:Show()
+end
+
 function ExperienceBar:EnrichXPContext(ctx)
 	if not ctx then return end
 	local now = GetTime and GetTime() or 0
@@ -524,21 +566,23 @@ function ExperienceBar:EnrichXPContext(ctx)
 	end
 end
 
-local function formatXPText(mode, ctx)
+local function formatXPText(mode, ctx, abbreviateNumbers)
 	if not ctx then return nil end
 	if mode == "NONE" then return nil end
 	if mode == "LEVEL" then return (L["xpBarTextLevelFmt"] or "Level %d"):format(ctx.level or 0) end
-	if mode == "CURMAX" then return formatNumber(ctx.current) .. " / " .. formatNumber(ctx.max) end
+	if mode == "CURMAX" then return formatNumber(ctx.current, abbreviateNumbers) .. " / " .. formatNumber(ctx.max, abbreviateNumbers) end
 	if mode == "PERCENT" then return string.format("%.1f%%", ctx.currentPercent or 0) end
-	if mode == "CURMAXPERCENT" then return string.format("%s / %s (%.1f%%)", formatNumber(ctx.current), formatNumber(ctx.max), ctx.currentPercent or 0) end
-	if mode == "RESTED" then return string.format("+%s", formatNumber(ctx.rested or 0)) end
+	if mode == "CURMAXPERCENT" then return string.format("%s / %s (%.1f%%)", formatNumber(ctx.current, abbreviateNumbers), formatNumber(ctx.max, abbreviateNumbers), ctx.currentPercent or 0) end
+	if mode == "RESTED" then return string.format("+%s", formatNumber(ctx.rested or 0, abbreviateNumbers)) end
 	if mode == "RESTEDPERCENT" then return string.format("%.1f%%", ctx.restedPercent or 0) end
 	if mode == "PERCENT_RESTED" then return string.format("%.1f%% (+%.1f%%)", ctx.currentPercent or 0, ctx.restedPercent or 0) end
-	if mode == "CURMAX_RESTED" then return string.format("%s / %s (+%s)", formatNumber(ctx.current), formatNumber(ctx.max), formatNumber(ctx.rested or 0)) end
+	if mode == "CURMAX_RESTED" then
+		return string.format("%s / %s (+%s)", formatNumber(ctx.current, abbreviateNumbers), formatNumber(ctx.max, abbreviateNumbers), formatNumber(ctx.rested or 0, abbreviateNumbers))
+	end
 	if mode == "TIME_THIS_LEVEL" then return string.format("%s: %s", L["xpBarTextTimeThisLevelLabel"] or "Time this level", formatDurationShort(ctx.timeThisLevelSeconds or 0)) end
 	if mode == "XP_PER_HOUR" then
 		if (ctx.xpPerHour or 0) <= 0 then return nil end
-		return string.format("%s: %s", L["xpBarTextXPPerHourLabel"] or "XP/hour", formatShortNumber(ctx.xpPerHour))
+		return string.format("%s: %s", L["xpBarTextXPPerHourLabel"] or "XP/hour", formatRateNumber(ctx.xpPerHour, abbreviateNumbers))
 	end
 	if mode == "ETA_LEVEL" then
 		if not ctx.etaLevelSeconds then return nil end
@@ -550,7 +594,7 @@ local function formatXPText(mode, ctx)
 			"%s: %s (%s %s)",
 			L["xpBarTextETAFormattingLabel"] or "Leveling in",
 			formatDurationShort(ctx.etaLevelSeconds),
-			formatShortNumber(ctx.xpPerHour),
+			formatRateNumber(ctx.xpPerHour, abbreviateNumbers),
 			L["xpBarTextXPPerHourSuffix"] or "XP/hour"
 		)
 	end
@@ -632,6 +676,8 @@ end
 function ExperienceBar:GetTextOutline() return normalizeTextOutline(getValue(DB_TEXT_OUTLINE, defaults.textOutline)) end
 
 function ExperienceBar:GetTextColor() return normalizeColor(getValue(DB_TEXT_COLOR, defaults.textColor), defaults.textColor) end
+
+function ExperienceBar:GetAbbreviateNumbers() return getValue(DB_TEXT_ABBREVIATE_NUMBERS, defaults.abbreviateNumbers) == true end
 
 function ExperienceBar:GetTextLeftMode() return normalizeTextContentMode(getValue(DB_TEXT_LEFT_MODE, defaults.textLeftMode or "LEVEL")) end
 
@@ -1168,9 +1214,10 @@ function ExperienceBar:UpdateTextFromContext(ctx)
 		return
 	end
 
-	local leftText = formatXPText(self:GetTextLeftMode(), ctx)
-	local centerText = formatXPText(self:GetTextCenterMode(), ctx)
-	local rightText = formatXPText(self:GetTextRightMode(), ctx)
+	local abbreviateNumbers = self:GetAbbreviateNumbers()
+	local leftText = formatXPText(self:GetTextLeftMode(), ctx, abbreviateNumbers)
+	local centerText = formatXPText(self:GetTextCenterMode(), ctx, abbreviateNumbers)
+	local rightText = formatXPText(self:GetTextRightMode(), ctx, abbreviateNumbers)
 
 	local function setText(fs, text)
 		if not fs then return end
@@ -1263,17 +1310,7 @@ function ExperienceBar:ShowEditModeHint(show)
 	if show then
 		if self.frame.editBg then self.frame.editBg:Show() end
 		self.previewing = true
-		self._hasRested = true
-		self:ApplyCurrentFillColor(true)
-		self.frame:SetMinMaxValues(0, 403725)
-		self.frame:SetValue(320192)
-		local sampleLevel = getPlayerLevel()
-		if sampleLevel <= 0 then sampleLevel = 80 end
-		local sample = buildXPContext(sampleLevel, 320192, 403725, 83533)
-		self._lastXPContext = sample
-		self:UpdateRestedOverlay(sample)
-		self:UpdateTextFromContext(sample)
-		self.frame:Show()
+		self:UpdatePreviewSample()
 	else
 		if self.frame.editBg then self.frame.editBg:Hide() end
 		self.previewing = nil
@@ -1362,6 +1399,7 @@ function ExperienceBar:BuildLayoutRecordFromProfile()
 	record.textSize = self:GetTextSize()
 	record.textFont = self:GetTextFont()
 	record.textOutline = self:GetTextOutline()
+	record.abbreviateNumbers = self:GetAbbreviateNumbers()
 	record.hideInPetBattle = self:GetHideInPetBattle()
 	record.hideBlizzardTracking = self:GetHideBlizzardTracking()
 	record.restedOverlayEnabled = self:GetRestedOverlayEnabled()
@@ -1437,6 +1475,8 @@ function ExperienceBar:ApplyLayoutData(data)
 	local textFont = data.textFont or addon.db[DB_TEXT_FONT] or defaults.textFont or "DEFAULT"
 	local textOutline = normalizeTextOutline(data.textOutline or addon.db[DB_TEXT_OUTLINE] or defaults.textOutline)
 	local textR, textG, textB, textA = normalizeColor(data.textColor or addon.db[DB_TEXT_COLOR] or defaults.textColor, defaults.textColor)
+	local abbreviateNumbers = addon.db[DB_TEXT_ABBREVIATE_NUMBERS] == true
+	if data.abbreviateNumbers ~= nil then abbreviateNumbers = data.abbreviateNumbers == true end
 	local hideInPetBattle = addon.db[DB_HIDE_IN_PET_BATTLE] == true
 	if data.hideInPetBattle ~= nil then hideInPetBattle = data.hideInPetBattle == true end
 	local hideBlizzardTracking = addon.db[DB_HIDE_BLIZZARD_TRACKING] == true
@@ -1474,6 +1514,7 @@ function ExperienceBar:ApplyLayoutData(data)
 	addon.db[DB_TEXT_FONT] = textFont
 	addon.db[DB_TEXT_OUTLINE] = textOutline
 	addon.db[DB_TEXT_COLOR] = { r = textR, g = textG, b = textB, a = textA }
+	addon.db[DB_TEXT_ABBREVIATE_NUMBERS] = abbreviateNumbers and true or false
 	addon.db[DB_HIDE_IN_PET_BATTLE] = hideInPetBattle and true or false
 	addon.db[DB_HIDE_BLIZZARD_TRACKING] = hideBlizzardTracking and true or false
 	addon.db[DB_RESTED_OVERLAY_ENABLED] = restedOverlayEnabled and true or false
@@ -1481,7 +1522,11 @@ function ExperienceBar:ApplyLayoutData(data)
 	self:ApplySize()
 	self:ApplyAppearance()
 	if prevAnchorRelativeFrame ~= anchorRelativeFrame then self:RefreshAnchor() end
-	self:UpdateSoon()
+	if self.previewing then
+		self:UpdatePreviewSample()
+	else
+		self:UpdateSoon()
+	end
 end
 
 local function applySetting(field, value)
@@ -1634,6 +1679,10 @@ local function applySetting(field, value)
 		local r, g, b, a = normalizeColor(value, defaults.textColor)
 		addon.db[DB_TEXT_COLOR] = { r = r, g = g, b = b, a = a }
 		value = addon.db[DB_TEXT_COLOR]
+	elseif field == "abbreviateNumbers" then
+		local enabled = value == true
+		addon.db[DB_TEXT_ABBREVIATE_NUMBERS] = enabled and true or false
+		value = enabled
 	elseif field == "hideInPetBattle" then
 		local enabled = value == true
 		addon.db[DB_HIDE_IN_PET_BATTLE] = enabled and true or false
@@ -1648,7 +1697,11 @@ local function applySetting(field, value)
 	ExperienceBar:ApplySize()
 	ExperienceBar:ApplyAppearance()
 	ExperienceBar:RefreshAnchor()
-	ExperienceBar:UpdateSoon()
+	if ExperienceBar.previewing then
+		ExperienceBar:UpdatePreviewSample()
+	else
+		ExperienceBar:UpdateSoon()
+	end
 end
 
 function ExperienceBar:RegisterEditMode(frame)
@@ -2013,6 +2066,15 @@ function ExperienceBar:RegisterEditMode(frame)
 				set = function(_, value) applySetting("textEnabled", value) end,
 			},
 			{
+				name = L["xpBarTextAbbreviateNumbers"] or "Use short numbers",
+				kind = SettingType.Checkbox,
+				field = "abbreviateNumbers",
+				default = defaults.abbreviateNumbers == true,
+				get = function() return ExperienceBar:GetAbbreviateNumbers() end,
+				set = function(_, value) applySetting("abbreviateNumbers", value) end,
+				isEnabled = function() return ExperienceBar:GetTextEnabled() end,
+			},
+			{
 				name = L["xpBarTextLeft"] or "Left text",
 				kind = SettingType.Dropdown,
 				field = "textLeftMode",
@@ -2150,6 +2212,7 @@ function ExperienceBar:RegisterEditMode(frame)
 			textSize = self:GetTextSize(),
 			textFont = self:GetTextFont(),
 			textOutline = self:GetTextOutline(),
+			abbreviateNumbers = self:GetAbbreviateNumbers(),
 			textColor = (function()
 				local r, g, b, a = self:GetTextColor()
 				return { r = r, g = g, b = b, a = a }

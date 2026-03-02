@@ -21,6 +21,7 @@ local function ensureDB()
 	db = addon.db.datapanel.bagspace
 	db.fontSize = db.fontSize or 14
 	db.displayMode = db.displayMode or "freeMax"
+	if db.ignoreComponentsBag == nil then db.ignoreComponentsBag = false end
 	if db.hideIcon == nil then db.hideIcon = false end
 	if not db.textColor then
 		local r, g, b = 1, 0.82, 0
@@ -50,7 +51,7 @@ local function createAceWindow()
 	aceWindow = frame.frame
 	frame:SetTitle((addon.DataPanel and addon.DataPanel.GetStreamOptionsTitle and addon.DataPanel.GetStreamOptionsTitle(stream and stream.meta and stream.meta.title)) or GAMEMENU_OPTIONS)
 	frame:SetWidth(320)
-	frame:SetHeight(260)
+	frame:SetHeight(300)
 	frame:SetLayout("List")
 
 	frame.frame:SetScript("OnShow", function(self) RestorePosition(self) end)
@@ -84,6 +85,7 @@ local function createAceWindow()
 	display:SetLabel(L["bagSpaceDisplay"] or "Bag space display")
 	display:SetList({
 		freeMax = L["bagSpaceDisplayFreeMax"] or "Free/Max",
+		currentMax = L["bagSpaceDisplayCurrentMax"] or L["Current/Max"] or "Current/Max",
 		free = L["bagSpaceDisplayFree"] or "Free",
 	})
 	display:SetValue(db.displayMode)
@@ -92,6 +94,15 @@ local function createAceWindow()
 		scheduleUpdate()
 	end)
 	frame:AddChild(display)
+
+	local ignoreComponentsBag = AceGUI:Create("CheckBox")
+	ignoreComponentsBag:SetLabel(L["bagSpaceIgnoreComponentsBag"] or "Ignore components bag")
+	ignoreComponentsBag:SetValue(db.ignoreComponentsBag)
+	ignoreComponentsBag:SetCallback("OnValueChanged", function(_, _, val)
+		db.ignoreComponentsBag = val and true or false
+		scheduleUpdate()
+	end)
+	frame:AddChild(ignoreComponentsBag)
 
 	local hideIcon = AceGUI:Create("CheckBox")
 	hideIcon:SetLabel(L["Hide icon"] or "Hide icon")
@@ -130,15 +141,17 @@ local REAGENT_BAG = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
 local BAG_ICON = "Interface\\Icons\\INV_Misc_Bag_08"
 local BAG_IDS = { 0, 1, 2, 3, 4, REAGENT_BAG }
 
-local function getBagSpace()
+local function getBagSpace(ignoreComponentsBag)
 	if not GetContainerNumSlotsFn or not GetContainerNumFreeSlotsFn then return 0, 0 end
 	local free, total = 0, 0
 	for _, bag in ipairs(BAG_IDS) do
-		local slots = GetContainerNumSlotsFn(bag)
-		if slots and slots > 0 then
-			total = total + slots
-			local freeSlots = GetContainerNumFreeSlotsFn(bag)
-			if freeSlots and freeSlots > 0 then free = free + freeSlots end
+		if not (ignoreComponentsBag and bag == REAGENT_BAG) then
+			local slots = GetContainerNumSlotsFn(bag)
+			if slots and slots > 0 then
+				total = total + slots
+				local freeSlots = GetContainerNumFreeSlotsFn(bag)
+				if freeSlots and freeSlots > 0 then free = free + freeSlots end
+			end
 		end
 	end
 	return free, total
@@ -148,12 +161,16 @@ local function updateBagSpace(s)
 	s = s or stream
 	ensureDB()
 
-	local free, total = getBagSpace()
+	local free, total = getBagSpace(db.ignoreComponentsBag)
+	local current = total - free
+	if current < 0 then current = 0 end
 	local size = db.fontSize or 14
 	local displayMode = db.displayMode or "freeMax"
 	local text
 	if displayMode == "free" then
 		text = tostring(free)
+	elseif displayMode == "currentMax" then
+		text = ("%d/%d"):format(current, total)
 	else
 		text = ("%d/%d"):format(free, total)
 	end
@@ -164,6 +181,7 @@ local function updateBagSpace(s)
 	s.snapshot.fontSize = size
 
 	local tooltip = (L["Bag Space"] or "Bag Space") .. ": " .. tostring(free) .. "/" .. tostring(total)
+	tooltip = tooltip .. "\n" .. (L["Current/Max"] or "Current/Max") .. ": " .. tostring(current) .. "/" .. tostring(total)
 	local hint = getOptionsHint()
 	if hint then tooltip = tooltip .. "\n" .. hint end
 	s.snapshot.tooltip = tooltip
@@ -171,7 +189,7 @@ end
 
 local provider = {
 	id = "bagspace",
-	version = 1,
+	version = 2,
 	title = L["Bag Space"] or "Bag Space",
 	update = updateBagSpace,
 	events = {
