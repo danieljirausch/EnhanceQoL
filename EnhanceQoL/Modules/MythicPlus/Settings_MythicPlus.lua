@@ -25,6 +25,7 @@ local function buildSettings()
 			name = L["Teleports"],
 			expanded = false,
 			colorizeTitle = false,
+			newTagID = "Teleports",
 		})
 		addon.SettingsLayout.gameplayTeleportsSection = sectionTeleports
 	end
@@ -45,9 +46,7 @@ local function buildSettings()
 			desc = L["teleportsWorldMapEnabledDesc"],
 			func = function(v)
 				addon.db["teleportsWorldMapEnabled"] = v
-				if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.RefreshWorldMapTeleportPanel then
-					addon.MythicPlus.functions.RefreshWorldMapTeleportPanel()
-				end
+				if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.RefreshWorldMapTeleportPanel then addon.MythicPlus.functions.RefreshWorldMapTeleportPanel() end
 			end,
 			children = {
 				{
@@ -87,6 +86,41 @@ local function buildSettings()
 		applyParentSection(entry)
 	end
 	addon.functions.SettingsCreateCheckboxes(cGameplay, data)
+
+	local hearthstoneOrder = {}
+	addon.functions.SettingsCreateDropdown(cGameplay, {
+		var = "teleportsPreferredHearthstone",
+		text = L["teleportsPreferredHearthstone"],
+		desc = L["teleportsPreferredHearthstoneDesc"],
+		type = Settings.VarType.String,
+		default = "random",
+		listFunc = function()
+			local list = { random = L["teleportsPreferredHearthstoneRandom"] or "Random (owned Hearthstones)" }
+			local order = { "random" }
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.GetHearthstoneDropdownOptions then
+				list, order = addon.MythicPlus.functions.GetHearthstoneDropdownOptions(true)
+			end
+			wipe(hearthstoneOrder)
+			for i, key in ipairs(order or {}) do
+				hearthstoneOrder[i] = key
+			end
+			return list
+		end,
+		order = hearthstoneOrder,
+		get = function()
+			local value = addon.db["teleportsPreferredHearthstone"]
+			if value == nil or value == "" then return "random" end
+			return tostring(value)
+		end,
+		set = function(value)
+			local selected = value and tostring(value) or "random"
+			if selected == "" then selected = "random" end
+			addon.db["teleportsPreferredHearthstone"] = selected
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.setRandomHearthstone then addon.MythicPlus.functions.setRandomHearthstone(true) end
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.RefreshWorldMapTeleportPanel then addon.MythicPlus.functions.RefreshWorldMapTeleportPanel() end
+		end,
+		parentSection = sectionTeleports,
+	})
 
 	-- Keybinding: World Map Teleport panel
 	if addon.functions.FindBindingIndex then

@@ -645,7 +645,6 @@ function addon.functions.initQuest()
 			if not UnitExists("target") or UnitPlayerControlled("target") then return end
 			local guid = UnitGUID("target")
 			if issecretvalue(guid) then return end
-			print("tset")
 			local npcID = GetNPCIDFromGUID(guid)
 			if not npcID then return end
 			if issecretvalue and issecretvalue(npcID) then return end

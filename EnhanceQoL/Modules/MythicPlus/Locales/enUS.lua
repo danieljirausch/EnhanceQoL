@@ -33,6 +33,9 @@ L["teleportsWorldMapEnabledDesc"] = "Adds a new tab to the World Map listing all
 L["teleportsWorldMapHelp"] = "Right-click to display the teleport destination\nShift+Right-click to toggle favorite"
 L["teleportsWorldMapShowSeason"] = "Show current season dungeons on World Map"
 L["teleportsWorldMapShowSeasonDesc"] = "Adds the classic current-season list to the World Map panel (duplicates teleports)."
+L["teleportsPreferredHearthstone"] = "Preferred Hearthstone"
+L["teleportsPreferredHearthstoneDesc"] = "Choose a specific Hearthstone for teleport usage. Set this to random to keep random behavior."
+L["teleportsPreferredHearthstoneRandom"] = "Random (owned Hearthstones)"
 L["teleportsWorldMapBinding"] = "Toggle World Map Teleport panel"
 L["teleportsRandomHearthstoneBinding"] = "Random Hearthstone"
 

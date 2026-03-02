@@ -4,6 +4,7 @@ addon.variables.NewVersionTableEQOL = {
 
 	-- Root category id from Settings/MainCategory.lua
 	["EQOL_UI"] = true,
+	["EQOL_GAMEPLAY"] = true,
 
 	-- Legacy/alias (can stay harmlessly)
 	["EQOL_INTERFACE"] = true,
@@ -17,4 +18,6 @@ addon.variables.NewVersionTableEQOL = {
 	["EQOL_CastbarsAndCooldowns"] = true,
 	["EQOL_xpBarEnabled"] = true,
 	["EQOL_unitframeSettingMinimap_visibility"] = true,
+	["EQOL_teleportsPreferredHearthstone"] = true,
+	["EQOL_Teleports"] = true,
 }
