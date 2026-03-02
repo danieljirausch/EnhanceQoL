@@ -4525,7 +4525,17 @@ end
 local function classNeedsUnitAura(class) return classUsesAuraPowers(class) or class == "MONK" end
 
 if classNeedsUnitAura(addon.variables.unitClass) then table.insert(RB.EVENTS_TO_REGISTER, "UNIT_AURA") end
+local function isResourceFrameEnabled()
+	-- Keep legacy behavior: only explicit `false` disables resource bars.
+	return not (addon and addon.db and addon.db.enableResourceFrame == false)
+end
+
 local function setPowerbars(opts)
+	if not isResourceFrameEnabled() then
+		if ResourceBars and ResourceBars.DisableResourceBars then ResourceBars.DisableResourceBars() end
+		return
+	end
+
 	local _, powerToken = UnitPowerType("player")
 	powerfrequent = {}
 	local isDruid = addon.variables.unitClass == "DRUID"
@@ -5718,6 +5728,11 @@ function ResourceBars.ReanchorDependentsOf(frameName)
 end
 
 function ResourceBars.Refresh()
+	if not isResourceFrameEnabled() then
+		if ResourceBars and ResourceBars.DisableResourceBars then ResourceBars.DisableResourceBars() end
+		return
+	end
+
 	setPowerbars()
 	-- Re-apply anchors so option changes take effect immediately
 	if healthBar then
