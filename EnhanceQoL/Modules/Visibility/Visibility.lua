@@ -130,6 +130,74 @@ local function getResourceBarEntries()
 	return list
 end
 
+local KNOWN_FRAME_LABEL_FALLBACKS = {
+	MainMenuBar = BINDING_HEADER_ACTIONBAR or "Action Bar",
+	MainActionBar = BINDING_HEADER_ACTIONBAR or "Action Bar",
+	MultiBarBottomLeft = BINDING_HEADER_ACTIONBAR2 or "Action Bar 2",
+	MultiBarBottomRight = BINDING_HEADER_ACTIONBAR3 or "Action Bar 3",
+	MultiBarRight = BINDING_HEADER_ACTIONBAR4 or "Action Bar 4",
+	MultiBarLeft = BINDING_HEADER_ACTIONBAR5 or "Action Bar 5",
+	MultiBar5 = BINDING_HEADER_ACTIONBAR6 or "Action Bar 6",
+	MultiBar6 = BINDING_HEADER_ACTIONBAR7 or "Action Bar 7",
+	MultiBar7 = BINDING_HEADER_ACTIONBAR8 or "Action Bar 8",
+	PetActionBar = TUTORIAL_TITLE61_HUNTER or "Pet Action Bar",
+	PetActionBarFrame = TUTORIAL_TITLE61_HUNTER or "Pet Action Bar",
+	StanceBar = HUD_EDIT_MODE_STANCE_BAR_LABEL or "Stance Bar",
+	StanceBarFrame = HUD_EDIT_MODE_STANCE_BAR_LABEL or "Stance Bar",
+	PlayerFrame = HUD_EDIT_MODE_PLAYER_FRAME_LABEL or "Player Frame",
+	TargetFrame = HUD_EDIT_MODE_TARGET_FRAME_LABEL or "Target Frame",
+	FocusFrame = _G.HUD_EDIT_MODE_FOCUS_FRAME_LABEL or "Focus Frame",
+	PetFrame = _G.HUD_EDIT_MODE_PET_FRAME_LABEL or "Pet Frame",
+	BossTargetFrameContainer = HUD_EDIT_MODE_BOSS_FRAMES_LABEL or "Boss Frames",
+	MicroMenu = L["MicroMenu"] or "Micro Menu",
+	BagsBar = L["BagsBar"] or "Bags Bar",
+	MinimapCluster = _G.MINIMAP_LABEL or "Minimap",
+	BuffFrame = L["BuffFrame"] or "Buff Frame",
+	DebuffFrame = L["DebuffFrame"] or "Debuff Frame",
+	EssentialCooldownViewer = L["cooldownViewerEssential"] or "Essential Cooldown Viewer",
+	UtilityCooldownViewer = L["cooldownViewerUtility"] or "Utility Cooldown Viewer",
+	BuffBarCooldownViewer = L["cooldownViewerBuffBar"] or "Buff Bar Cooldowns",
+	BuffIconCooldownViewer = L["cooldownViewerBuffIcon"] or "Buff Icon Cooldowns",
+	EQOLHealthBar = HEALTH or "Health",
+}
+
+local function buildKnownFrameLabelMap()
+	local labels = {}
+	local function addEntries(entries)
+		for _, entry in ipairs(entries or {}) do
+			local name = entry and entry.name
+			local label = entry and entry.label
+			if type(name) == "string" and name ~= "" and type(label) == "string" and label ~= "" then labels[name] = label end
+		end
+	end
+
+	addEntries(getActionBarFrameEntries())
+	addEntries(getUnitFrameEntries())
+	addEntries(getResourceBarEntries())
+	addEntries(getCooldownViewerEntries())
+
+	for name, label in pairs(KNOWN_FRAME_LABEL_FALLBACKS) do
+		if labels[name] == nil and type(label) == "string" and label ~= "" then labels[name] = label end
+	end
+	return labels
+end
+
+local function getFrameDisplayLabel(name, knownFrameLabels)
+	if type(name) ~= "string" or name == "" then return name end
+	local labels = knownFrameLabels or buildKnownFrameLabelMap()
+	local label = labels[name]
+	if type(label) == "string" and label ~= "" then return label end
+
+	local powerType = name:match("^EQOL(.+)Bar$")
+	if powerType then
+		local rb = addon.Aura and addon.Aura.ResourceBars
+		if rb and rb.PowerLabels and type(rb.PowerLabels[powerType]) == "string" and rb.PowerLabels[powerType] ~= "" then return rb.PowerLabels[powerType] end
+		local globalLabel = _G["POWER_TYPE_" .. tostring(powerType)]
+		if type(globalLabel) == "string" and globalLabel ~= "" then return globalLabel end
+	end
+	return name
+end
+
 local function stopFade(target)
 	local group = target and target.EQOL_VisibilityFadeGroup
 	if group and group.Stop then group:Stop() end
@@ -768,6 +836,9 @@ local function getSortedRuleDefinitions()
 		defs[#defs + 1] = def
 	end
 	table.sort(defs, function(a, b)
+		local ao = tonumber(a.order) or 100000
+		local bo = tonumber(b.order) or 100000
+		if ao ~= bo then return ao < bo end
 		local la = (a.label or a.key or ""):lower()
 		local lb = (b.label or b.key or ""):lower()
 		if la == lb then return (a.key or "") < (b.key or "") end
@@ -1301,7 +1372,7 @@ local function ensureEditor()
 
 	local frameScroll = CreateFrame("ScrollFrame", nil, middle, "UIPanelScrollFrameTemplate")
 	frameScroll:SetPoint("TOPLEFT", framesTitle, "BOTTOMLEFT", 0, -8)
-	frameScroll:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -26, 80)
+	frameScroll:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -26, 48)
 	local frameContent = CreateFrame("Frame", nil, frameScroll)
 	frameContent:SetSize(1, 1)
 	frameScroll:SetScrollChild(frameContent)
@@ -1312,7 +1383,8 @@ local function ensureEditor()
 	pickButton:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 46)
 
 	local knownFramesButton = createButton(middle, L["VisibilityAddKnownFrames"] or "Add known frames", 140, 22)
-	knownFramesButton:SetPoint("LEFT", pickButton, "RIGHT", 8, 0)
+	knownFramesButton:ClearAllPoints()
+	knownFramesButton:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 20)
 
 	local frameNameLabel = createLabel(middle, L["VisibilityFrameName"] or "Frame name", 11, "OUTLINE")
 	frameNameLabel:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 20)
@@ -1323,6 +1395,15 @@ local function ensureEditor()
 
 	local addFrame = createButton(middle, L["VisibilityAddFrame"] or "Add", 60, 20)
 	addFrame:SetPoint("LEFT", frameNameBox, "RIGHT", 8, 0)
+
+	-- Keep manual/picker frame adding hidden for now.
+	pickButton:Hide()
+	pickButton:Disable()
+	frameNameLabel:Hide()
+	frameNameBox:Hide()
+	frameNameBox:Disable()
+	addFrame:Hide()
+	addFrame:Disable()
 
 	local statusText = middle:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	statusText:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 6)
@@ -1549,9 +1630,13 @@ function Visibility:RefreshEditor()
 			editor.configNameBox:Enable()
 		end
 		if editor.frameNameBox then
-			editor.frameNameBox:Enable()
-			editor.addFrame:Enable()
-			editor.pickButton:Enable()
+			editor.frameNameBox:SetText("")
+			editor.frameNameBox:Disable()
+			editor.frameNameBox:Hide()
+			editor.addFrame:Disable()
+			editor.addFrame:Hide()
+			editor.pickButton:Disable()
+			editor.pickButton:Hide()
 		end
 		if editor.addKnownFrames then editor.addKnownFrames:Enable() end
 		editor.enabledCheck:SetChecked(cfg.enabled == true)
@@ -1573,8 +1658,11 @@ function Visibility:RefreshEditor()
 		if editor.frameNameBox then
 			editor.frameNameBox:SetText("")
 			editor.frameNameBox:Disable()
+			editor.frameNameBox:Hide()
 			editor.addFrame:Disable()
-			editor.pickButton:Enable()
+			editor.addFrame:Hide()
+			editor.pickButton:Disable()
+			editor.pickButton:Hide()
 		end
 		if editor.addKnownFrames then editor.addKnownFrames:Enable() end
 		editor.enabledCheck:SetChecked(false)
@@ -1597,6 +1685,7 @@ function Visibility:RefreshEditor()
 	local frameRows = editor.frameRows
 	local fContent = editor.frameList.content
 	local fIndex = 0
+	local knownFrameLabels = buildKnownFrameLabelMap()
 	if cfg and type(cfg.frames) == "table" then
 		for _, name in ipairs(cfg.frames) do
 			fIndex = fIndex + 1
@@ -1622,7 +1711,7 @@ function Visibility:RefreshEditor()
 				frameRows[fIndex] = row
 			end
 			row.frameName = name
-			row.text:SetText(name)
+			row.text:SetText(getFrameDisplayLabel(name, knownFrameLabels))
 			if resolveFrameByName(name) then
 				row.text:SetTextColor(1, 1, 1, 1)
 			else

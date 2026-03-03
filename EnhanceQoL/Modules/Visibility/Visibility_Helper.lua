@@ -19,23 +19,22 @@ Helper.MODES = {
 }
 
 Helper.RULE_DEFINITIONS = {
-	{ key = "IN_COMBAT", label = L["VisibilityCondInCombat"] or "In combat" },
-	{ key = "OUT_OF_COMBAT", label = L["VisibilityCondOutOfCombat"] or "Out of combat" },
-	{ key = "IN_GROUP", label = L["VisibilityCondInGroup"] or "In group" },
-	{ key = "IN_PARTY", label = L["VisibilityCondInParty"] or "In party" },
-	{ key = "IN_RAID", label = L["VisibilityCondInRaid"] or "In raid" },
-	{ key = "SOLO", label = L["VisibilityCondSolo"] or "Solo" },
-	{ key = "IN_INSTANCE", label = L["VisibilityCondInInstance"] or "In instance" },
-	{ key = "INSTANCE_PARTY", label = L["VisibilityCondInstanceParty"] or "Instance: Party" },
-	{ key = "INSTANCE_RAID", label = L["VisibilityCondInstanceRaid"] or "Instance: Raid" },
-	{ key = "INSTANCE_PVP", label = L["VisibilityCondInstancePvp"] or "Instance: PvP" },
-	{ key = "INSTANCE_ARENA", label = L["VisibilityCondInstanceArena"] or "Instance: Arena" },
-	{ key = "INSTANCE_SCENARIO", label = L["VisibilityCondInstanceScenario"] or "Instance: Scenario" },
-	{ key = "MOUNTED", label = L["VisibilityCondMounted"] or "Mounted" },
-	{ key = "SKYRIDING", label = L["VisibilityCondSkyriding"] or "Skyriding" },
-	{ key = "HAS_TARGET", label = L["VisibilityCondHasTarget"] or "Has target" },
-	{ key = "CASTING", label = L["VisibilityCondCasting"] or "Casting" },
-	{ key = "MOUSEOVER", label = L["VisibilityCondMouseover"] or "Mouseover" },
+	{ key = "IN_COMBAT", label = L["VisibilityCondInCombat"] or "In combat", order = 10 },
+	{ key = "IN_GROUP", label = L["VisibilityCondInGroup"] or "In group", order = 20 },
+	{ key = "IN_PARTY", label = L["VisibilityCondInParty"] or "In party", order = 30 },
+	{ key = "IN_RAID", label = L["VisibilityCondInRaid"] or "In raid", order = 40 },
+	{ key = "SOLO", label = L["VisibilityCondSolo"] or "Solo", order = 50 },
+	{ key = "IN_INSTANCE", label = L["VisibilityCondInInstance"] or "In instance", order = 60 },
+	{ key = "INSTANCE_PARTY", label = L["VisibilityCondInstanceParty"] or "Instance: Party", order = 70 },
+	{ key = "INSTANCE_RAID", label = L["VisibilityCondInstanceRaid"] or "Instance: Raid", order = 80 },
+	{ key = "INSTANCE_PVP", label = L["VisibilityCondInstancePvp"] or "Instance: PvP", order = 90 },
+	{ key = "INSTANCE_ARENA", label = L["VisibilityCondInstanceArena"] or "Instance: Arena", order = 100 },
+	{ key = "INSTANCE_SCENARIO", label = L["VisibilityCondInstanceScenario"] or "Instance: Scenario", order = 110 },
+	{ key = "MOUNTED", label = L["VisibilityCondMounted"] or "Mounted", order = 120 },
+	{ key = "SKYRIDING", label = L["VisibilityCondSkyriding"] or "Skyriding", order = 130 },
+	{ key = "HAS_TARGET", label = L["VisibilityCondHasTarget"] or "Has target", order = 140 },
+	{ key = "CASTING", label = L["VisibilityCondCasting"] or "Casting", order = 150 },
+	{ key = "MOUSEOVER", label = L["VisibilityCondMouseover"] or "Mouseover", order = 160 },
 }
 
 Helper.RULE_LABELS = Helper.RULE_LABELS or {}
@@ -109,7 +108,10 @@ local function normalizeRuleNode(node)
 		if node.negate == nil and node["not"] ~= nil then node.negate = node["not"] end
 		node["not"] = nil
 		local negate = node.negate and true or false
-		if node.key == "NOT_MOUNTED" then
+		if node.key == "OUT_OF_COMBAT" then
+			node.key = "IN_COMBAT"
+			negate = not negate
+		elseif node.key == "NOT_MOUNTED" then
 			node.key = "MOUNTED"
 			negate = not negate
 		elseif node.key == "NOT_SKYRIDING" then
@@ -328,7 +330,6 @@ function Helper.BuildContext(runtime)
 
 	return {
 		IN_COMBAT = inCombat,
-		OUT_OF_COMBAT = not inCombat,
 		IN_GROUP = inGroup,
 		IN_PARTY = inParty,
 		IN_RAID = inRaid,
