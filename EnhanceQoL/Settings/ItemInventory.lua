@@ -312,9 +312,9 @@ local function getEnchantPrefixKeywords()
 	end
 
 	addKeyword(TRADEFRAME_ENCHANT_SLOT_LABEL)
-	addKeyword(ENCHANT)
+	addKeyword(_G.ENCHANT)
 	addKeyword(ENCHANTS)
-	addKeyword(PROFESSIONS_ENCHANTING)
+	addKeyword(_G.PROFESSIONS_ENCHANTING)
 
 	return enchantPrefixKeywords
 end
