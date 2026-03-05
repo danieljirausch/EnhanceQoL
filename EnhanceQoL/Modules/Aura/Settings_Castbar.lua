@@ -613,6 +613,11 @@ function CastbarSettings.BuildStandaloneCastbarSettings(ctx)
 	castTexture.isEnabled = isCastEnabled
 	list[#list + 1] = castTexture
 
+	list[#list + 1] = checkbox(L["Reverse fill"] or "Reverse fill", function() return getCast({ "cast", "reverseFill" }, castDef.reverseFill == true) == true end, function(val)
+		setCast({ "cast", "reverseFill" }, val and true or false)
+		refreshCastbar()
+	end, castDef.reverseFill == true, section.barAppearance, isCastEnabled)
+
 	list[#list + 1] = { name = L["Border & backdrop"] or "Border & Backdrop", kind = settingType.Collapsible, id = section.frameAppearance, defaultCollapsed = true }
 
 	local castBackdrop = checkboxColor({

@@ -96,6 +96,7 @@ local fallbackCastDefaults = {
 	iconSize = 22,
 	iconOffset = { x = -4, y = 0 },
 	texture = "DEFAULT",
+	reverseFill = false,
 	color = { 0.9, 0.7, 0.2, 1 },
 	useClassColor = false,
 	useGradient = false,
@@ -1064,6 +1065,9 @@ local function configureCastStatic(castCfg, castDefaults)
 	local duration = (state.castInfo.endTime or 0) - (state.castInfo.startTime or 0)
 	local maxValue = duration and duration > 0 and duration / 1000 or 1
 	state.castInfo.maxValue = maxValue
+	local reverseFill = castCfg.reverseFill
+	if reverseFill == nil then reverseFill = castDefaults.reverseFill == true end
+	if UFHelper.applyStatusBarReverseFill then UFHelper.applyStatusBarReverseFill(state.castBar, reverseFill == true) end
 	state.castBar:SetMinMaxValues(0, maxValue)
 	refreshCastbarGradient(state.castBar, isEmpoweredDefault and nil or castCfg)
 	if state.castName then
