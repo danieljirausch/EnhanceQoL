@@ -946,13 +946,10 @@ local function shamanEnhancementGetSelfStatus(provider, reminder)
 	local hasWindfury = reminder:UnitHasAnyAuraSpellId("player", provider.windfurySpellIds)
 	local hasFlametongue = reminder:UnitHasAnyAuraSpellId("player", provider.flametongueSpellIds)
 
-	-- Fallback for clients where imbues are only visible as temporary enchants.
-	if not hasWindfury and not hasFlametongue and GetWeaponEnchantInfo then
+	if GetWeaponEnchantInfo then
 		local hasMainHandEnchant, _, _, _, hasOffHandEnchant = GetWeaponEnchantInfo()
-		if hasMainHandEnchant and hasOffHandEnchant then
-			hasWindfury = true
-			hasFlametongue = true
-		end
+		if not hasWindfury and hasMainHandEnchant then hasWindfury = true end
+		if not hasFlametongue and hasOffHandEnchant then hasFlametongue = true end
 	end
 
 	if not hasWindfury then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(windfuryDisplayId, "Windfury Weapon") end
