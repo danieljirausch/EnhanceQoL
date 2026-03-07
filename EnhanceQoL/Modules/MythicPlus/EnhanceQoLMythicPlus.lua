@@ -406,11 +406,7 @@ end
 local function normalizeBloodlustBorderTexture(value)
 	if type(value) ~= "string" or value == "" then return "DEFAULT" end
 	if value == "DEFAULT" or value == "SOLID" then return value end
-	if isLikelyFilePath(value) then return value end
-	if LSM and LSM.IsValid and LSM:IsValid("border", value) then return value end
-	local borderTable = getCachedMediaHash("border")
-	if borderTable and borderTable[value] then return value end
-	return "DEFAULT"
+	return value
 end
 
 local function resolveBloodlustBorderTexture(value)
@@ -501,11 +497,7 @@ end
 local function normalizeBloodlustCooldownFontFace(value)
 	if type(value) ~= "string" or value == "" then return BLOODLUST_GLOBAL_FONT_KEY end
 	if value == BLOODLUST_GLOBAL_FONT_KEY then return value end
-	if value:find("\\", 1, true) or value:find("/", 1, true) then return value end
-	if LSM and LSM.IsValid and LSM:IsValid("font", value) then return value end
-	local fontTable = getCachedMediaHash("font")
-	if fontTable and fontTable[value] then return value end
-	return BLOODLUST_GLOBAL_FONT_KEY
+	return value
 end
 
 local function resolveBloodlustCooldownFontFace()
@@ -618,6 +610,16 @@ local function applyBloodlustCooldownVisualSettings()
 		bloodlustAnchor.previewCooldownText:Show()
 	end
 end
+
+local function refreshBloodlustMedia(mediaType)
+	if mediaType == "border" then
+		applyBloodlustBorderVisualSettings()
+	elseif mediaType == "font" then
+		applyBloodlustCooldownVisualSettings()
+	end
+end
+
+addon.MythicPlus.functions.refreshBloodlustMedia = refreshBloodlustMedia
 
 local function removeBloodlustFrame()
 	if bloodlustButton then
@@ -1510,9 +1512,7 @@ local function refreshBloodlustTracker(playReadySound)
 			end
 		end
 	end
-	if shouldPlayDebuffActiveSound then
-		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomDebuffSound", "mythicPlusBloodlustTrackerDebuffSoundFile")
-	end
+	if shouldPlayDebuffActiveSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomDebuffSound", "mythicPlusBloodlustTrackerDebuffSoundFile") end
 	local classToken = addon.variables.unitClass
 	if playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] and BLOODLUST_READY_CLASSES[classToken] then
 		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomReadySound", "mythicPlusBloodlustTrackerReadySoundFile")
