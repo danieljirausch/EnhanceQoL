@@ -997,6 +997,117 @@ local function getEffectiveScale(frame)
 	return 1
 end
 
+local function setFrameParentCached(frame, parent)
+	if not (frame and parent and frame.SetParent) then return false end
+	if frame._hbCachedParent == parent and (not frame.GetParent or frame:GetParent() == parent) then return false end
+	frame:SetParent(parent)
+	frame._hbCachedParent = parent
+	return true
+end
+
+local function setFrameStrataCached(frame, strata)
+	if not (frame and frame.SetFrameStrata and strata ~= nil) then return false end
+	if frame._hbCachedFrameStrata == strata then return false end
+	frame:SetFrameStrata(strata)
+	frame._hbCachedFrameStrata = strata
+	return true
+end
+
+local function setFrameLevelCached(frame, level)
+	if not (frame and frame.SetFrameLevel and level ~= nil) then return false end
+	level = max(0, tonumber(level) or 0)
+	if frame._hbCachedFrameLevel == level then return false end
+	frame:SetFrameLevel(level)
+	frame._hbCachedFrameLevel = level
+	return true
+end
+
+local function setAllPointsCached(frame, relativeTo)
+	if not (frame and relativeTo) then return false end
+	if frame._hbAllPointsTarget == relativeTo then return false end
+	frame._hbAllPointsTarget = relativeTo
+	frame._hbPointCache = nil
+	if frame.ClearAllPoints then frame:ClearAllPoints() end
+	if frame.SetAllPoints then
+		frame:SetAllPoints(relativeTo)
+	else
+		frame:SetPoint("TOPLEFT", relativeTo, "TOPLEFT", 0, 0)
+		frame:SetPoint("BOTTOMRIGHT", relativeTo, "BOTTOMRIGHT", 0, 0)
+	end
+	return true
+end
+
+local function setSinglePointCached(frame, point, relativeTo, relativePoint, x, y)
+	if not frame then return false end
+	local cache = frame._hbPointCache
+	if cache and cache.mode == 1 and cache.point == point and cache.relativeTo == relativeTo and cache.relativePoint == relativePoint and cache.x == x and cache.y == y then return false end
+	frame._hbAllPointsTarget = nil
+	cache = cache or {}
+	frame._hbPointCache = cache
+	if frame.ClearAllPoints then frame:ClearAllPoints() end
+	frame:SetPoint(point, relativeTo, relativePoint, x, y)
+	cache.mode = 1
+	cache.point = point
+	cache.relativeTo = relativeTo
+	cache.relativePoint = relativePoint
+	cache.x = x
+	cache.y = y
+	return true
+end
+
+local function setTwoPointsCached(frame, firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY, secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
+	if not frame then return false end
+	local cache = frame._hbPointCache
+	if
+		cache
+		and cache.mode == 2
+		and cache.firstPoint == firstPoint
+		and cache.firstRelativeTo == firstRelativeTo
+		and cache.firstRelativePoint == firstRelativePoint
+		and cache.firstX == firstX
+		and cache.firstY == firstY
+		and cache.secondPoint == secondPoint
+		and cache.secondRelativeTo == secondRelativeTo
+		and cache.secondRelativePoint == secondRelativePoint
+		and cache.secondX == secondX
+		and cache.secondY == secondY
+	then
+		return false
+	end
+	frame._hbAllPointsTarget = nil
+	cache = cache or {}
+	frame._hbPointCache = cache
+	if frame.ClearAllPoints then frame:ClearAllPoints() end
+	frame:SetPoint(firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY)
+	frame:SetPoint(secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
+	cache.mode = 2
+	cache.firstPoint = firstPoint
+	cache.firstRelativeTo = firstRelativeTo
+	cache.firstRelativePoint = firstRelativePoint
+	cache.firstX = firstX
+	cache.firstY = firstY
+	cache.secondPoint = secondPoint
+	cache.secondRelativeTo = secondRelativeTo
+	cache.secondRelativePoint = secondRelativePoint
+	cache.secondX = secondX
+	cache.secondY = secondY
+	return true
+end
+
+local function setSizeCached(frame, width, height)
+	if not (frame and frame.SetSize) then return false end
+	if frame._hbCachedWidth == width and frame._hbCachedHeight == height then return false end
+	frame:SetSize(width, height)
+	frame._hbCachedWidth = width
+	frame._hbCachedHeight = height
+	return true
+end
+
+local function getOffsetXY(offset)
+	if type(offset) ~= "table" then return nil, nil end
+	return offset.x, offset.y
+end
+
 local function getGrowthAxes(growth)
 	local axes = GROWTH_AXES[normalizeGrowth(growth)]
 	if axes then return axes[1], axes[2] end
@@ -1006,6 +1117,7 @@ end
 local function clearHiddenAuraButton(btn)
 	if not btn then return end
 	btn._showTooltip = false
+	btn._hbTooltipShown = false
 	if btn.SetMouseClickEnabled then btn:SetMouseClickEnabled(false) end
 	if btn.SetMouseMotionEnabled then btn:SetMouseMotionEnabled(false) end
 	if btn.EnableMouse then btn:EnableMouse(false) end
@@ -1070,8 +1182,7 @@ local function positionAuraButton(btn, container, primary, secondary, index, per
 	local scale = getEffectiveScale(container)
 	local x = roundToPixel(col * step * xSign, scale)
 	local y = roundToPixel(row * step * ySign, scale)
-	btn:ClearAllPoints()
-	btn:SetPoint(basePoint, container, basePoint, x, y)
+	setSinglePointCached(btn, basePoint, container, basePoint, x, y)
 end
 
 local function getState(btn)
@@ -1106,35 +1217,44 @@ local function getState(btn)
 	return state, st
 end
 
-local function ensureVisualLayers(btn, st)
+local function ensureVisualLayers(btn, st, forceLayout)
 	if not (btn and st) then return nil end
 	local parent = st.barGroup or btn
 	if not parent then return nil end
 
+	local layoutChanged = forceLayout == true
 	if not st.healerBuffRoot then
 		st.healerBuffRoot = CreateFrame("Frame", nil, parent)
 		st.healerBuffRoot:EnableMouse(false)
+		layoutChanged = true
 	end
 	local root = st.healerBuffRoot
-	if root.GetParent and root:GetParent() ~= parent then root:SetParent(parent) end
-	root:ClearAllPoints()
-	root:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-	root:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
-	if root.SetFrameStrata and parent.GetFrameStrata then root:SetFrameStrata(parent:GetFrameStrata()) end
-	if root.SetFrameLevel and parent.GetFrameLevel then root:SetFrameLevel((parent:GetFrameLevel() or 0) + 12) end
+	if st._hbVisualParent ~= parent or (root.GetParent and root:GetParent() ~= parent) then
+		layoutChanged = true
+		st._hbVisualParent = parent
+	end
+	setFrameParentCached(root, parent)
+	if layoutChanged then
+		root._hbAllPointsTarget = nil
+		setAllPointsCached(root, parent)
+	end
+	if root.SetFrameStrata and parent.GetFrameStrata then setFrameStrataCached(root, parent:GetFrameStrata()) end
+	if root.SetFrameLevel and parent.GetFrameLevel then setFrameLevelCached(root, (parent:GetFrameLevel() or 0) + 12) end
 	root:Show()
 
 	if not st.healerBuffIconLayer then
 		st.healerBuffIconLayer = CreateFrame("Frame", nil, root)
 		st.healerBuffIconLayer:EnableMouse(false)
+		layoutChanged = true
 	end
 	local iconLayer = st.healerBuffIconLayer
-	if iconLayer.GetParent and iconLayer:GetParent() ~= root then iconLayer:SetParent(root) end
-	iconLayer:ClearAllPoints()
-	iconLayer:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-	iconLayer:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
-	if iconLayer.SetFrameStrata and root.GetFrameStrata then iconLayer:SetFrameStrata(root:GetFrameStrata()) end
-	if iconLayer.SetFrameLevel and root.GetFrameLevel then iconLayer:SetFrameLevel((root:GetFrameLevel() or 0) + 30) end
+	setFrameParentCached(iconLayer, root)
+	if layoutChanged then
+		iconLayer._hbAllPointsTarget = nil
+		setAllPointsCached(iconLayer, root)
+	end
+	if iconLayer.SetFrameStrata and root.GetFrameStrata then setFrameStrataCached(iconLayer, root:GetFrameStrata()) end
+	if iconLayer.SetFrameLevel and root.GetFrameLevel then setFrameLevelCached(iconLayer, (root:GetFrameLevel() or 0) + 30) end
 
 	if not st.healerBuffTint then
 		st.healerBuffTint = root:CreateTexture(nil, "ARTWORK", nil, 2)
@@ -1157,11 +1277,23 @@ local function ensureVisualLayers(btn, st)
 		st.healerBuffBorder:EnableMouse(false)
 		st.healerBuffBorder:Hide()
 	end
-	if st.healerBuffBorder.GetParent and st.healerBuffBorder:GetParent() ~= root then st.healerBuffBorder:SetParent(root) end
-	if st.healerBuffBorder.SetFrameStrata and root.GetFrameStrata then st.healerBuffBorder:SetFrameStrata(root:GetFrameStrata()) end
-	if st.healerBuffBorder.SetFrameLevel and root.GetFrameLevel then st.healerBuffBorder:SetFrameLevel((root:GetFrameLevel() or 0) + 4) end
+	setFrameParentCached(st.healerBuffBorder, root)
+	if st.healerBuffBorder.SetFrameStrata and root.GetFrameStrata then setFrameStrataCached(st.healerBuffBorder, root:GetFrameStrata()) end
+	if st.healerBuffBorder.SetFrameLevel and root.GetFrameLevel then setFrameLevelCached(st.healerBuffBorder, (root:GetFrameLevel() or 0) + 4) end
+
+	if layoutChanged then st._hbHealerBuffLayoutRevision = (st._hbHealerBuffLayoutRevision or 0) + 1 end
 
 	return root
+end
+
+local function ensureVisualLayersForUpdate(btn, st)
+	if not (btn and st) then return nil end
+	local parent = st.barGroup or btn
+	if not parent then return nil end
+	if not st.healerBuffRoot or not st.healerBuffIconLayer then return ensureVisualLayers(btn, st, false) end
+	if st._hbVisualParent ~= parent then return ensureVisualLayers(btn, st, false) end
+	if st.healerBuffRoot.GetParent and st.healerBuffRoot:GetParent() ~= parent then return ensureVisualLayers(btn, st, false) end
+	return st.healerBuffRoot
 end
 
 local function clearHealthTint(st)
@@ -1491,9 +1623,9 @@ local function ensureGroupContainer(state, st, groupId)
 		container:EnableMouse(false)
 		state.groupContainers[groupId] = container
 	end
-	if container.GetParent and container:GetParent() ~= st.healerBuffIconLayer then container:SetParent(st.healerBuffIconLayer) end
-	if container.SetFrameStrata and st.healerBuffIconLayer.GetFrameStrata then container:SetFrameStrata(st.healerBuffIconLayer:GetFrameStrata()) end
-	if container.SetFrameLevel and st.healerBuffIconLayer.GetFrameLevel then container:SetFrameLevel((st.healerBuffIconLayer:GetFrameLevel() or 0) + 1) end
+	setFrameParentCached(container, st.healerBuffIconLayer)
+	if container.SetFrameStrata and st.healerBuffIconLayer.GetFrameStrata then setFrameStrataCached(container, st.healerBuffIconLayer:GetFrameStrata()) end
+	if container.SetFrameLevel and st.healerBuffIconLayer.GetFrameLevel then setFrameLevelCached(container, (st.healerBuffIconLayer:GetFrameLevel() or 0) + 1) end
 	return container
 end
 
@@ -1504,73 +1636,104 @@ local function getAuraStyleForGroup(state, cfg, group)
 		state.groupStyleCache[group.id] = styleCache
 	end
 	local ac = cfg and cfg.auras and cfg.auras.buff or EMPTY
-	local key = table.concat({
-		group.size,
-		group.spacing,
-		ac.showTooltip == false and 0 or 1,
-		group.showCooldownSwipe == false and 0 or 1,
-		group.showCooldownEdge == false and 0 or 1,
-		group.showCooldownBling == false and 0 or 1,
-		group.hideCooldownText == true and 1 or 0,
-		group.hideChargeText == true and 1 or 0,
-		tostring(group.cooldownTextSize),
-		tostring(group.chargeTextSize),
-		ac.showCooldown == false and 0 or 1,
-		tostring(ac.showCooldownText),
-		tostring(ac.cooldownAnchor),
-		tostring(ac.cooldownFont),
-		tostring(ac.cooldownFontSize),
-		tostring(ac.cooldownFontOutline),
-		tostring(ac.showStacks),
-		tostring(ac.countAnchor),
-		tostring(ac.countFont),
-		tostring(ac.countFontSize),
-		tostring(ac.countFontOutline),
-	}, "|")
-	if styleCache._key == key then return styleCache end
+	local cooldownOffsetX, cooldownOffsetY = getOffsetXY(ac.cooldownOffset)
+	local countOffsetX, countOffsetY = getOffsetXY(ac.countOffset)
+	local showTooltip = ac.showTooltip ~= false
+	local showCooldownSwipe = group.showCooldownSwipe ~= false
+	local showCooldownEdge = group.showCooldownEdge ~= false
+	local showCooldownBling = group.showCooldownBling ~= false
+	local showCooldown = ac.showCooldown ~= false
+	local showCooldownText
+	if group.hideCooldownText == true then
+		showCooldownText = false
+	elseif ac.showCooldownText ~= nil then
+		showCooldownText = ac.showCooldownText
+	else
+		showCooldownText = nil
+	end
+	local showStacks
+	if group.hideChargeText == true then
+		showStacks = false
+	elseif ac.showStacks ~= nil then
+		showStacks = ac.showStacks
+	else
+		showStacks = nil
+	end
+	local cooldownFontSize = group.cooldownTextSize ~= nil and group.cooldownTextSize or ac.cooldownFontSize
+	local countFontSize = group.chargeTextSize ~= nil and group.chargeTextSize or ac.countFontSize
+	local changed = styleCache._cfgSize ~= group.size
+		or styleCache._cfgPadding ~= group.spacing
+		or styleCache._cfgShowTooltip ~= showTooltip
+		or styleCache._cfgShowCooldownSwipe ~= showCooldownSwipe
+		or styleCache._cfgShowCooldownEdge ~= showCooldownEdge
+		or styleCache._cfgShowCooldownBling ~= showCooldownBling
+		or styleCache._cfgShowCooldown ~= showCooldown
+		or styleCache._cfgShowCooldownText ~= showCooldownText
+		or styleCache._cfgShowStacks ~= showStacks
+		or styleCache._cfgCooldownAnchor ~= ac.cooldownAnchor
+		or styleCache._cfgCooldownOffsetX ~= cooldownOffsetX
+		or styleCache._cfgCooldownOffsetY ~= cooldownOffsetY
+		or styleCache._cfgCooldownFont ~= ac.cooldownFont
+		or styleCache._cfgCooldownFontSize ~= cooldownFontSize
+		or styleCache._cfgCooldownFontOutline ~= ac.cooldownFontOutline
+		or styleCache._cfgCountAnchor ~= ac.countAnchor
+		or styleCache._cfgCountOffsetX ~= countOffsetX
+		or styleCache._cfgCountOffsetY ~= countOffsetY
+		or styleCache._cfgCountFont ~= ac.countFont
+		or styleCache._cfgCountFontSize ~= countFontSize
+		or styleCache._cfgCountFontOutline ~= ac.countFontOutline
+	if not changed then return styleCache end
 
-	styleCache._key = key
+	styleCache._cfgSize = group.size
+	styleCache._cfgPadding = group.spacing
+	styleCache._cfgShowTooltip = showTooltip
+	styleCache._cfgShowCooldownSwipe = showCooldownSwipe
+	styleCache._cfgShowCooldownEdge = showCooldownEdge
+	styleCache._cfgShowCooldownBling = showCooldownBling
+	styleCache._cfgShowCooldown = showCooldown
+	styleCache._cfgShowCooldownText = showCooldownText
+	styleCache._cfgShowStacks = showStacks
+	styleCache._cfgCooldownAnchor = ac.cooldownAnchor
+	styleCache._cfgCooldownOffsetX = cooldownOffsetX
+	styleCache._cfgCooldownOffsetY = cooldownOffsetY
+	styleCache._cfgCooldownFont = ac.cooldownFont
+	if group.cooldownTextSize ~= nil then
+		styleCache._cfgCooldownFontSize = group.cooldownTextSize
+	else
+		styleCache._cfgCooldownFontSize = ac.cooldownFontSize
+	end
+	styleCache._cfgCooldownFontOutline = ac.cooldownFontOutline
+	styleCache._cfgCountAnchor = ac.countAnchor
+	styleCache._cfgCountOffsetX = countOffsetX
+	styleCache._cfgCountOffsetY = countOffsetY
+	styleCache._cfgCountFont = ac.countFont
+	if group.chargeTextSize ~= nil then
+		styleCache._cfgCountFontSize = group.chargeTextSize
+	else
+		styleCache._cfgCountFontSize = ac.countFontSize
+	end
+	styleCache._cfgCountFontOutline = ac.countFontOutline
 	styleCache.size = group.size
 	styleCache.padding = group.spacing
-	styleCache.showTooltip = ac.showTooltip ~= false
-	styleCache.showCooldownSwipe = group.showCooldownSwipe ~= false
-	styleCache.showCooldownEdge = group.showCooldownEdge ~= false
-	styleCache.showCooldownBling = group.showCooldownBling ~= false
-	styleCache.showCooldown = ac.showCooldown ~= false
-	if group.hideCooldownText == true then
-		styleCache.showCooldownText = false
-	elseif ac.showCooldownText ~= nil then
-		styleCache.showCooldownText = ac.showCooldownText
-	else
-		styleCache.showCooldownText = nil
-	end
-	if group.hideChargeText == true then
-		styleCache.showStacks = false
-	elseif ac.showStacks ~= nil then
-		styleCache.showStacks = ac.showStacks
-	else
-		styleCache.showStacks = nil
-	end
+	styleCache.showTooltip = showTooltip
+	styleCache.showCooldownSwipe = showCooldownSwipe
+	styleCache.showCooldownEdge = showCooldownEdge
+	styleCache.showCooldownBling = showCooldownBling
+	styleCache.showCooldown = showCooldown
+	styleCache.showCooldownText = showCooldownText
+	styleCache.showStacks = showStacks
 	styleCache.cooldownAnchor = ac.cooldownAnchor
 	styleCache.cooldownOffset = ac.cooldownOffset
 	styleCache.cooldownFont = ac.cooldownFont
-	if group.cooldownTextSize ~= nil then
-		styleCache.cooldownFontSize = group.cooldownTextSize
-	else
-		styleCache.cooldownFontSize = ac.cooldownFontSize
-	end
+	styleCache.cooldownFontSize = cooldownFontSize
 	styleCache.cooldownFontOutline = ac.cooldownFontOutline
 	styleCache.countAnchor = ac.countAnchor
 	styleCache.countOffset = ac.countOffset
 	styleCache.countFont = ac.countFont
-	if group.chargeTextSize ~= nil then
-		styleCache.countFontSize = group.chargeTextSize
-	else
-		styleCache.countFontSize = ac.countFontSize
-	end
+	styleCache.countFontSize = countFontSize
 	styleCache.countFontOutline = ac.countFontOutline
 	styleCache.showDR = false
-	styleCache._eqolStyleHash = key
+	styleCache._eqolStyleRevision = (styleCache._eqolStyleRevision or 0) + 1
 	return styleCache
 end
 
@@ -1579,10 +1742,9 @@ local function updateGroupContainerLayout(container, group, shown)
 	local scale = getEffectiveScale(container)
 	local ox = roundToPixel(group.x or 0, scale)
 	local oy = roundToPixel(group.y or 0, scale)
-	container:ClearAllPoints()
-	container:SetPoint(group.anchorPoint, container:GetParent(), group.anchorPoint, ox, oy)
+	setSinglePointCached(container, group.anchorPoint, container:GetParent(), group.anchorPoint, ox, oy)
 	local w, h = calcGridSize(shown, group.perRow, group.size, group.spacing, growthPrimary)
-	container:SetSize(w, h)
+	setSizeCached(container, w, h)
 	return growthPrimary, growthSecondary
 end
 
@@ -1623,10 +1785,10 @@ local function ensureIndicatorBorderFrame(btn)
 		btn._hbIndicatorBorder = border
 	end
 	local parent = btn.overlay or btn
-	if border:GetParent() ~= parent then border:SetParent(parent) end
-	border:SetFrameStrata(parent:GetFrameStrata() or btn:GetFrameStrata())
+	setFrameParentCached(border, parent)
+	setFrameStrataCached(border, parent:GetFrameStrata() or btn:GetFrameStrata())
 	local baseLevel = parent:GetFrameLevel() or btn:GetFrameLevel() or 0
-	border:SetFrameLevel(baseLevel + 2)
+	setFrameLevelCached(border, baseLevel + 2)
 	return border
 end
 
@@ -1659,9 +1821,7 @@ local function applyIndicatorBorder(btn, group)
 	end
 	if border._hbOffset ~= offset then
 		border._hbOffset = offset
-		border:ClearAllPoints()
-		border:SetPoint("TOPLEFT", btn, "TOPLEFT", -offset, offset)
-		border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", offset, -offset)
+		setTwoPointsCached(border, "TOPLEFT", btn, "TOPLEFT", -offset, offset, "BOTTOMRIGHT", btn, "BOTTOMRIGHT", offset, -offset)
 	end
 	local br, bg, bb, ba = resolveColor(group.indicatorBorderColor)
 	border:SetBackdropColor(0, 0, 0, 0)
@@ -1705,16 +1865,159 @@ local function collectActiveRulesForGroup(state, compiled, groupId, outRules, ch
 	return force
 end
 
-local function buildRuleHash(compiled, ruleIds, familyAuraInstance, styleHash)
-	local hash = tostring(styleHash or "") .. "#" .. tostring(#ruleIds)
-	for i = 1, #ruleIds do
-		local ruleId = ruleIds[i]
+local function didGroupRenderStateChange(cache, compiled, group, activeRules, familyAuraInstance, styleRevision, layoutRevision)
+	local changed = cache.groupId ~= group.id
+		or cache.groupStyle ~= group.style
+		or cache.compiledGeneration ~= compiled.generation
+		or cache.styleRevision ~= styleRevision
+		or cache.layoutRevision ~= layoutRevision
+		or cache.ruleCount ~= #activeRules
+		or cache.indicatorBorderEnabled ~= group.indicatorBorderEnabled
+		or cache.indicatorBorderTexture ~= group.indicatorBorderTexture
+		or cache.indicatorBorderSize ~= group.indicatorBorderSize
+		or cache.indicatorBorderOffset ~= group.indicatorBorderOffset
+
+	local borderR, borderG, borderB, borderA = resolveColor(group.indicatorBorderColor)
+	changed = changed or cache.indicatorBorderR ~= borderR or cache.indicatorBorderG ~= borderG or cache.indicatorBorderB ~= borderB or cache.indicatorBorderA ~= borderA
+
+	if group.style == STYLE_SQUARE then
+		local groupR, groupG, groupB, groupA = resolveColor(group.color)
+		changed = changed or cache.squareGroupR ~= groupR or cache.squareGroupG ~= groupG or cache.squareGroupB ~= groupB or cache.squareGroupA ~= groupA
+		cache.squareGroupR = groupR
+		cache.squareGroupG = groupG
+		cache.squareGroupB = groupB
+		cache.squareGroupA = groupA
+	else
+		cache.squareGroupR = nil
+		cache.squareGroupG = nil
+		cache.squareGroupB = nil
+		cache.squareGroupA = nil
+	end
+
+	local cachedRuleIds = cache.ruleIds or {}
+	local cachedAuraIds = cache.auraIds or {}
+	cache.ruleIds = cachedRuleIds
+	cache.auraIds = cachedAuraIds
+	for i = 1, #activeRules do
+		local ruleId = activeRules[i]
 		local rule = compiled.ruleById[ruleId]
 		local familyId = rule and rule.spellFamilyId
 		local auraId = familyId and familyAuraInstance and familyAuraInstance[familyId] or 0
-		hash = hash .. "|" .. tostring(ruleId) .. ":" .. tostring(auraId)
+		if cachedRuleIds[i] ~= ruleId or cachedAuraIds[i] ~= auraId then changed = true end
+		cachedRuleIds[i] = ruleId
+		cachedAuraIds[i] = auraId
 	end
-	return hash
+	for i = #activeRules + 1, cache.ruleCount or 0 do
+		if cachedRuleIds[i] ~= nil or cachedAuraIds[i] ~= nil then changed = true end
+		cachedRuleIds[i] = nil
+		cachedAuraIds[i] = nil
+	end
+
+	cache.groupId = group.id
+	cache.groupStyle = group.style
+	cache.compiledGeneration = compiled.generation
+	cache.styleRevision = styleRevision
+	cache.layoutRevision = layoutRevision
+	cache.ruleCount = #activeRules
+	cache.indicatorBorderEnabled = group.indicatorBorderEnabled
+	cache.indicatorBorderTexture = group.indicatorBorderTexture
+	cache.indicatorBorderSize = group.indicatorBorderSize
+	cache.indicatorBorderOffset = group.indicatorBorderOffset
+	cache.indicatorBorderR = borderR
+	cache.indicatorBorderG = borderG
+	cache.indicatorBorderB = borderB
+	cache.indicatorBorderA = borderA
+	return changed
+end
+
+local function didBarRenderStateChange(cache, group, groupId, layoutRevision)
+	if not (group and groupId) then
+		local changed = cache.active ~= false
+		wipeTable(cache)
+		cache.active = false
+		return changed
+	end
+	local r, g, b, a = resolveColor(group.color)
+	local changed = cache.active ~= true
+		or cache.groupId ~= groupId
+		or cache.layoutRevision ~= layoutRevision
+		or cache.barOrientation ~= group.barOrientation
+		or cache.barThickness ~= group.barThickness
+		or cache.inset ~= group.inset
+		or cache.anchorPoint ~= group.anchorPoint
+		or cache.x ~= group.x
+		or cache.y ~= group.y
+		or cache.r ~= r
+		or cache.g ~= g
+		or cache.b ~= b
+		or cache.a ~= a
+	cache.active = true
+	cache.groupId = groupId
+	cache.layoutRevision = layoutRevision
+	cache.barOrientation = group.barOrientation
+	cache.barThickness = group.barThickness
+	cache.inset = group.inset
+	cache.anchorPoint = group.anchorPoint
+	cache.x = group.x
+	cache.y = group.y
+	cache.r = r
+	cache.g = g
+	cache.b = b
+	cache.a = a
+	return changed
+end
+
+local function didBorderRenderStateChange(cache, group, groupId, layoutRevision)
+	if not (group and groupId) then
+		local changed = cache.active ~= false
+		wipeTable(cache)
+		cache.active = false
+		return changed
+	end
+	local r, g, b, a = resolveColor(group.color)
+	local changed = cache.active ~= true
+		or cache.groupId ~= groupId
+		or cache.layoutRevision ~= layoutRevision
+		or cache.borderSize ~= group.borderSize
+		or cache.inset ~= group.inset
+		or cache.anchorPoint ~= group.anchorPoint
+		or cache.x ~= group.x
+		or cache.y ~= group.y
+		or cache.r ~= r
+		or cache.g ~= g
+		or cache.b ~= b
+		or cache.a ~= a
+	cache.active = true
+	cache.groupId = groupId
+	cache.layoutRevision = layoutRevision
+	cache.borderSize = group.borderSize
+	cache.inset = group.inset
+	cache.anchorPoint = group.anchorPoint
+	cache.x = group.x
+	cache.y = group.y
+	cache.r = r
+	cache.g = g
+	cache.b = b
+	cache.a = a
+	return changed
+end
+
+local function didTintRenderStateChange(cache, group, groupId)
+	if not (group and groupId) then
+		local changed = cache.active ~= false
+		wipeTable(cache)
+		cache.active = false
+		return changed
+	end
+	local r, g, b, a = resolveColor(group.color)
+	local changed = cache.active ~= true or cache.groupId ~= groupId or cache.r ~= r or cache.g ~= g or cache.b ~= b or cache.a ~= a
+	cache.active = true
+	cache.groupId = groupId
+	cache.r = r
+	cache.g = g
+	cache.b = b
+	cache.a = a
+	return changed
 end
 
 local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, changedFamilies, renderHashes)
@@ -1729,36 +2032,15 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 	local maxRules = (group.iconMode == ICON_MODE_PRIORITY) and 1 or nil
 	local force = collectActiveRulesForGroup(state, compiled, group.id, activeRules, changedFamilies, maxRules)
 	local style = getAuraStyleForGroup(state, cfg, group)
-	local styleHash = tostring(style._eqolStyleHash or "") .. "|" .. tostring(group.style or STYLE_ICON)
-	styleHash = styleHash
-		.. "|"
-		.. tostring(group.indicatorBorderEnabled == true)
-		.. "|"
-		.. tostring(group.indicatorBorderTexture or "DEFAULT")
-		.. "|"
-		.. tostring(group.indicatorBorderSize or 1)
-		.. "|"
-		.. tostring(group.indicatorBorderOffset or 0)
-		.. "|"
-		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[1] or 0)
-		.. "|"
-		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[2] or 0)
-		.. "|"
-		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[3] or 0)
-		.. "|"
-		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[4] or 0.95)
-	if group.style == STYLE_SQUARE then
-		local cr, cg, cb, ca = resolveColor(group.color)
-		styleHash = table.concat({ styleHash, cr, cg, cb, ca }, ":")
-		for i = 1, #activeRules do
-			local rule = compiled.ruleById[activeRules[i]]
-			local rr, rg, rb, ra = resolveColor((rule and rule.color) or group.color)
-			styleHash = styleHash .. "|" .. table.concat({ rr, rg, rb, ra }, ",")
-		end
+	local styleRevision = style._eqolStyleRevision or 0
+	local layoutRevision = st._hbHealerBuffLayoutRevision or 0
+	local renderState = renderHashes[group.id]
+	if not renderState then
+		renderState = {}
+		renderHashes[group.id] = renderState
 	end
-	local hash = buildRuleHash(compiled, activeRules, state.familyAuraInstance, styleHash)
-	if not force and renderHashes[group.id] == hash then return end
-	renderHashes[group.id] = hash
+	local renderChanged = didGroupRenderStateChange(renderState, compiled, group, activeRules, state.familyAuraInstance, styleRevision, layoutRevision)
+	if not force and not renderChanged then return end
 
 	if #activeRules == 0 then
 		container:Hide()
@@ -1795,20 +2077,48 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 			if button.cd.SetDrawBling then button.cd:SetDrawBling(drawCooldownBling) end
 		end
 		local familyChanged = changedFamilies and familyId and changedFamilies[familyId] == true
-		if familyChanged or button._hbAuraInstance ~= auraInstanceId or button._hbStyleKey ~= styleHash then
+		local auraApplied = false
+		if familyChanged or button._hbAuraInstance ~= auraInstanceId or button._hbStyleRevision ~= styleRevision or button._hbAppliedVisualMode ~= group.style then
 			AuraUtil.applyAuraToButton(button, aura, style, false, unitToken)
 			button._hbAuraInstance = auraInstanceId
-			button._hbStyleKey = styleHash
+			button._hbStyleRevision = styleRevision
+			button._hbAppliedVisualMode = group.style
+			auraApplied = true
 		end
 		if group.style == STYLE_SQUARE then
-			styleSquareButton(button, (rule and rule.color) or group.color)
-			setAuraTooltipState(button, false)
+			if auraApplied or button._hbVisualMode ~= STYLE_SQUARE or button._hbVisualRuleId ~= ruleId or button._hbVisualGeneration ~= compiled.generation then
+				styleSquareButton(button, (rule and rule.color) or group.color)
+				button._hbVisualMode = STYLE_SQUARE
+				button._hbVisualRuleId = ruleId
+				button._hbVisualGeneration = compiled.generation
+			end
+			if button._hbTooltipShown ~= false then
+				setAuraTooltipState(button, false)
+				button._hbTooltipShown = false
+			end
 		else
-			styleIconButton(button)
-			setAuraTooltipState(button, style.showTooltip == true and (auraInstanceId and auraInstanceId > 0))
+			if button._hbVisualMode ~= STYLE_ICON then
+				styleIconButton(button)
+				button._hbVisualMode = STYLE_ICON
+				button._hbVisualRuleId = nil
+				button._hbVisualGeneration = compiled.generation
+			end
+			local showTooltip = style.showTooltip == true and (auraInstanceId and auraInstanceId > 0)
+			if button._hbTooltipShown ~= showTooltip then
+				setAuraTooltipState(button, showTooltip)
+				button._hbTooltipShown = showTooltip
+			end
 		end
-		applyIndicatorBorder(button, group)
-		if button.SetSize then button:SetSize(group.size, group.size) end
+		if button._hbIndicatorRevision ~= compiled.generation or button._hbIndicatorGroupId ~= group.id or button._hbIndicatorStyle ~= group.style then
+			applyIndicatorBorder(button, group)
+			button._hbIndicatorRevision = compiled.generation
+			button._hbIndicatorGroupId = group.id
+			button._hbIndicatorStyle = group.style
+		end
+		if button.SetSize and button._hbButtonSize ~= group.size then
+			button:SetSize(group.size, group.size)
+			button._hbButtonSize = group.size
+		end
 		positionAuraButton(button, container, primary, secondary, index, group.perRow, group.size, group.spacing)
 		button:Show()
 	end
@@ -1856,15 +2166,20 @@ local function renderBar(st, group)
 	local r, g, b, a = resolveColor(group.color)
 	local ox, oy = getStyleAnchoredOffsets(st.healerBuffRoot, group, inset)
 	bar:SetColorTexture(r, g, b, a)
-	bar:ClearAllPoints()
 	if group.barOrientation == ORIENT_VERTICAL then
-		bar:SetPoint("TOP", st.healerBuffRoot, "TOP", ox, oy - inset)
-		bar:SetPoint("BOTTOM", st.healerBuffRoot, "BOTTOM", ox, oy + inset)
-		bar:SetWidth(thickness)
+		setTwoPointsCached(bar, "TOP", st.healerBuffRoot, "TOP", ox, oy - inset, "BOTTOM", st.healerBuffRoot, "BOTTOM", ox, oy + inset)
+		if bar._hbBarWidth ~= thickness then
+			bar:SetWidth(thickness)
+			bar._hbBarWidth = thickness
+		end
+		bar._hbBarHeight = nil
 	else
-		bar:SetPoint("LEFT", st.healerBuffRoot, "LEFT", ox + inset, oy)
-		bar:SetPoint("RIGHT", st.healerBuffRoot, "RIGHT", ox - inset, oy)
-		bar:SetHeight(thickness)
+		setTwoPointsCached(bar, "LEFT", st.healerBuffRoot, "LEFT", ox + inset, oy, "RIGHT", st.healerBuffRoot, "RIGHT", ox - inset, oy)
+		if bar._hbBarHeight ~= thickness then
+			bar:SetHeight(thickness)
+			bar._hbBarHeight = thickness
+		end
+		bar._hbBarWidth = nil
 	end
 	bar:Show()
 end
@@ -1880,9 +2195,7 @@ local function renderBorder(st, group)
 	local size = max(1, group.borderSize or 1)
 	local r, g, b, a = resolveColor(group.color)
 	local ox, oy = getStyleAnchoredOffsets(st.healerBuffRoot, group, inset)
-	border:ClearAllPoints()
-	border:SetPoint("TOPLEFT", st.healerBuffRoot, "TOPLEFT", ox + inset, oy - inset)
-	border:SetPoint("BOTTOMRIGHT", st.healerBuffRoot, "BOTTOMRIGHT", ox - inset, oy + inset)
+	setTwoPointsCached(border, "TOPLEFT", st.healerBuffRoot, "TOPLEFT", ox + inset, oy - inset, "BOTTOMRIGHT", st.healerBuffRoot, "BOTTOMRIGHT", ox - inset, oy + inset)
 	local key = tostring(size)
 	if border._hbBackdropKey ~= key then
 		border._hbBackdropKey = key
@@ -1933,6 +2246,10 @@ local function renderAll(btn, st, state, compiled, cfg, changedFamilies)
 	local renderHash = state.renderHashByStyle
 	renderHash[STYLE_ICON] = renderHash[STYLE_ICON] or {}
 	renderHash[STYLE_SQUARE] = renderHash[STYLE_SQUARE] or {}
+	renderHash[STYLE_BAR] = renderHash[STYLE_BAR] or {}
+	renderHash[STYLE_BORDER] = renderHash[STYLE_BORDER] or {}
+	renderHash[STYLE_TINT] = renderHash[STYLE_TINT] or {}
+	local layoutRevision = st._hbHealerBuffLayoutRevision or 0
 
 	local activeContainers = {}
 	for i = 1, #compiled.groupOrder do
@@ -1956,70 +2273,23 @@ local function renderAll(btn, st, state, compiled, cfg, changedFamilies)
 	local borderGroup, borderGroupId = winnerForStyle(compiled, state.groupActive, STYLE_BORDER)
 	local tintGroup, tintGroupId = winnerForStyle(compiled, state.groupActive, STYLE_TINT)
 
-	local barHash = barGroupId
-			and table.concat({
-				barGroupId,
-				tostring(barGroup.barOrientation),
-				tostring(barGroup.barThickness),
-				tostring(barGroup.inset),
-				tostring(barGroup.anchorPoint),
-				tostring(barGroup.x),
-				tostring(barGroup.y),
-				tostring(barGroup.color and barGroup.color[1]),
-				tostring(barGroup.color and barGroup.color[2]),
-				tostring(barGroup.color and barGroup.color[3]),
-				tostring(barGroup.color and barGroup.color[4]),
-			}, ":")
-		or "none"
-	if renderHash[STYLE_BAR] ~= barHash then
-		renderHash[STYLE_BAR] = barHash
-		renderBar(st, barGroup)
-	end
+	if didBarRenderStateChange(renderHash[STYLE_BAR], barGroup, barGroupId, layoutRevision) then renderBar(st, barGroup) end
 
-	local borderHash = borderGroupId
-			and table.concat({
-				borderGroupId,
-				tostring(borderGroup.borderSize),
-				tostring(borderGroup.inset),
-				tostring(borderGroup.anchorPoint),
-				tostring(borderGroup.x),
-				tostring(borderGroup.y),
-				tostring(borderGroup.color and borderGroup.color[1]),
-				tostring(borderGroup.color and borderGroup.color[2]),
-				tostring(borderGroup.color and borderGroup.color[3]),
-				tostring(borderGroup.color and borderGroup.color[4]),
-			}, ":")
-		or "none"
-	if renderHash[STYLE_BORDER] ~= borderHash then
-		renderHash[STYLE_BORDER] = borderHash
-		renderBorder(st, borderGroup)
-	end
+	if didBorderRenderStateChange(renderHash[STYLE_BORDER], borderGroup, borderGroupId, layoutRevision) then renderBorder(st, borderGroup) end
 
-	local tintHash = tintGroupId
-			and table.concat({
-				tintGroupId,
-				tostring(tintGroup.color and tintGroup.color[1]),
-				tostring(tintGroup.color and tintGroup.color[2]),
-				tostring(tintGroup.color and tintGroup.color[3]),
-				tostring(tintGroup.color and tintGroup.color[4]),
-			}, ":")
-		or "none"
-	if renderHash[STYLE_TINT] ~= tintHash then
-		renderHash[STYLE_TINT] = tintHash
-		renderTint(btn, st, tintGroup)
-	end
+	if didTintRenderStateChange(renderHash[STYLE_TINT], tintGroup, tintGroupId) then renderTint(btn, st, tintGroup) end
 end
 
 function HB.BuildButton(btn)
 	local state, st = getState(btn)
 	if not (state and st) then return end
-	ensureVisualLayers(btn, st)
+	ensureVisualLayers(btn, st, true)
 end
 
 function HB.LayoutButton(btn)
 	local state, st = getState(btn)
 	if not (state and st) then return end
-	ensureVisualLayers(btn, st)
+	ensureVisualLayers(btn, st, true)
 end
 
 function HB.ClearButton(btn)
@@ -2041,7 +2311,7 @@ function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate, compi
 		return
 	end
 
-	ensureVisualLayers(btn, st)
+	ensureVisualLayersForUpdate(btn, st)
 	local unit = btn.unit
 
 	if isFullUpdate or not updateInfo then
@@ -2113,7 +2383,7 @@ function HB.UpdateSample(btn)
 		HB.ClearButton(btn)
 		return
 	end
-	ensureVisualLayers(btn, st)
+	ensureVisualLayersForUpdate(btn, st)
 
 	local sampleRuleActive, sampleGroupActive, sampleFamilyAura, sampleFamilyAuraInstance = buildSampleState(state, compiled)
 	state.ruleActive = sampleRuleActive

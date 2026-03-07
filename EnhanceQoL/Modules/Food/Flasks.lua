@@ -15,6 +15,7 @@ local tsort = table.sort
 local C_Item_GetItemInfo = C_Item and C_Item.GetItemInfo
 local C_Item_GetItemNameByID = C_Item and C_Item.GetItemNameByID
 local C_Item_RequestLoadItemDataByID = C_Item and C_Item.RequestLoadItemDataByID
+local CreateFrame = CreateFrame
 local STAT_HASTE_LABEL = _G.STAT_HASTE
 local STAT_CRIT_LABEL = _G.STAT_CRITICAL_STRIKE
 local STAT_MASTERY_LABEL = _G.STAT_MASTERY
@@ -28,6 +29,7 @@ local ROLE_MELEE_LABEL = _G.MELEE
 addon.Flasks = addon.Flasks or {}
 addon.Flasks.functions = addon.Flasks.functions or {}
 addon.Flasks.filteredFlasks = addon.Flasks.filteredFlasks or {}
+addon.Flasks.bagItemCountCache = addon.Flasks.bagItemCountCache or {}
 
 addon.Flasks.typeOrder = { "haste", "criticalStrike", "mastery", "versatility", "alchemicalChaos" }
 addon.Flasks.roleOrder = { "tank", "healer", "ranged", "melee" }
@@ -246,11 +248,8 @@ local function getClassInfoById(classId)
 	return nil, nil, nil
 end
 
-local function getDirectBagItemCount(itemId)
-	local targetId = tonumber(itemId)
-	if not targetId or targetId <= 0 then return 0 end
-
-	local count = 0
+local function rebuildBagItemCountCache()
+	local counts = {}
 	local maxBag = tonumber(NUM_TOTAL_EQUIPPED_BAG_SLOTS) or tonumber(NUM_BAG_SLOTS) or 4
 
 	if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
@@ -258,26 +257,39 @@ local function getDirectBagItemCount(itemId)
 			local slotCount = C_Container.GetContainerNumSlots(bag) or 0
 			for slot = 1, slotCount do
 				local info = C_Container.GetContainerItemInfo(bag, slot)
-				if info and tonumber(info.itemID) == targetId then count = count + (tonumber(info.stackCount) or 1) end
+				local itemId = info and tonumber(info.itemID) or nil
+				if itemId and itemId > 0 then counts[itemId] = (counts[itemId] or 0) + (tonumber(info.stackCount) or 1) end
 			end
 		end
-		return count
-	end
-
-	if GetContainerNumSlots and GetContainerItemID and GetContainerItemInfo then
+	elseif GetContainerNumSlots and GetContainerItemID and GetContainerItemInfo then
 		for bag = 0, maxBag do
 			local slotCount = GetContainerNumSlots(bag) or 0
 			for slot = 1, slotCount do
-				local slotItemId = GetContainerItemID(bag, slot)
-				if tonumber(slotItemId) == targetId then
+				local itemId = tonumber(GetContainerItemID(bag, slot))
+				if itemId and itemId > 0 then
 					local _, stackCount = GetContainerItemInfo(bag, slot)
-					count = count + (tonumber(stackCount) or 1)
+					counts[itemId] = (counts[itemId] or 0) + (tonumber(stackCount) or 1)
 				end
 			end
 		end
 	end
 
-	return count
+	addon.Flasks.bagItemCountCache = counts
+	addon.Flasks.bagItemCountCacheReady = true
+	return counts
+end
+
+local function getBagItemCountCache()
+	if addon.Flasks.bagItemCountCacheReady == true and type(addon.Flasks.bagItemCountCache) == "table" then return addon.Flasks.bagItemCountCache end
+	return rebuildBagItemCountCache()
+end
+
+local function getDirectBagItemCount(itemId)
+	local targetId = tonumber(itemId)
+	if not targetId or targetId <= 0 then return 0 end
+
+	local cache = getBagItemCountCache()
+	return tonumber(cache[targetId]) or 0
 end
 
 local function getBestItemCount(itemId)
@@ -519,3 +531,14 @@ function addon.Flasks.functions.updateAllowedFlasks(specID)
 	addon.Flasks.lastSelectedPreference = selectedPreference
 	return candidates, selectedType
 end
+
+addon.Flasks.functions.rebuildBagItemCountCache = rebuildBagItemCountCache
+
+local bagItemCountCacheFrame = addon.Flasks.bagItemCountCacheFrame or CreateFrame("Frame")
+addon.Flasks.bagItemCountCacheFrame = bagItemCountCacheFrame
+bagItemCountCacheFrame:RegisterEvent("PLAYER_LOGIN")
+bagItemCountCacheFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+bagItemCountCacheFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+bagItemCountCacheFrame:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "BAG_UPDATE_DELAYED" then rebuildBagItemCountCache() end
+end)

@@ -89,6 +89,9 @@ local defaults = Reminder.defaults
 
 local PROVIDER_SCOPE_GROUP = "GROUP"
 local PROVIDER_SCOPE_SELF = "SELF"
+local GROUP_UNIT_STATUS_INELIGIBLE = -1
+local GROUP_UNIT_STATUS_PRESENT = 0
+local GROUP_UNIT_STATUS_MISSING = 1
 
 local EVOKER_BLESSING_OF_BRONZE_IDS = {
 	381732,
@@ -216,6 +219,77 @@ local SHAMAN_RESTORATION_TIDECALLER_AURA_NAMES = {
 	"Tidecaller's Guard",
 }
 
+local spellPresentationCache = {}
+local spellDataLoadRequested = {}
+local auraSlotResultBuffer = {}
+local auraSlotResultCount = 0
+
+local function normalizeCachedSpellId(value)
+	local spellId = tonumber(value)
+	if not spellId or spellId <= 0 then return nil end
+	return spellId
+end
+
+local function getCachedSpellPresentation(spellId)
+	spellId = normalizeCachedSpellId(spellId)
+	if not spellId then return nil, nil end
+
+	local cached = spellPresentationCache[spellId]
+	if cached and cached.name and cached.icon then return cached.name, cached.icon end
+
+	local name
+	local icon
+
+	if C_Spell and C_Spell.GetSpellInfo then
+		local info = C_Spell.GetSpellInfo(spellId)
+		if type(info) == "table" then
+			if type(info.name) == "string" and info.name ~= "" then name = info.name end
+			if info.iconID and info.iconID ~= "" then icon = info.iconID end
+		end
+	end
+
+	if not name and C_Spell and C_Spell.GetSpellName then
+		local directName = C_Spell.GetSpellName(spellId)
+		if type(directName) == "string" and directName ~= "" then name = directName end
+	end
+
+	if not icon and C_Spell.GetSpellTexture then
+		local fallbackIcon = C_Spell.GetSpellTexture(spellId)
+		if fallbackIcon and fallbackIcon ~= "" then icon = fallbackIcon end
+	end
+
+	if not cached then
+		cached = {}
+		spellPresentationCache[spellId] = cached
+	end
+	if name and name ~= "" then cached.name = name end
+	if icon and icon ~= "" then cached.icon = icon end
+
+	return cached.name, cached.icon
+end
+
+local function captureAuraSlotResults(...)
+	local count = select("#", ...)
+	for i = 1, count do
+		auraSlotResultBuffer[i] = select(i, ...)
+	end
+	if auraSlotResultCount > count then
+		for i = count + 1, auraSlotResultCount do
+			auraSlotResultBuffer[i] = nil
+		end
+	end
+	auraSlotResultCount = count
+
+	local nextToken = auraSlotResultBuffer[1]
+	if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
+	return auraSlotResultBuffer, count, nextToken
+end
+
+local function getHelpfulAuraSlotBuffer(unit, continuationToken)
+	if continuationToken ~= nil then return captureAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken)) end
+	return captureAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE))
+end
+
 local function clamp(value, minValue, maxValue, fallback)
 	local n = tonumber(value)
 	if n == nil then return fallback end
@@ -297,38 +371,21 @@ local function isPlayerOffhandShield()
 end
 
 local function safeGetSpellName(spellId)
-	if C_Spell and C_Spell.GetSpellInfo then
-		local info = C_Spell.GetSpellInfo(spellId)
-		if type(info) == "table" and type(info.name) == "string" and info.name ~= "" then return info.name end
-	end
-	if C_Spell and C_Spell.GetSpellName then
-		local name = C_Spell.GetSpellName(spellId)
-		if type(name) == "string" and name ~= "" then return name end
-	end
-	if GetSpellInfo then
-		local name = GetSpellInfo(spellId)
-		if type(name) == "string" and name ~= "" then return name end
-	end
-	return nil
+	local name = getCachedSpellPresentation(spellId)
+	return name
 end
 
 local function requestSpellDataLoad(spellId)
-	spellId = tonumber(spellId)
+	spellId = normalizeCachedSpellId(spellId)
 	if not spellId then return end
-	if spellId <= 0 then return end
+	if spellDataLoadRequested[spellId] == true then return end
+	spellDataLoadRequested[spellId] = true
 	if C_Spell and C_Spell.RequestLoadSpellData then C_Spell.RequestLoadSpellData(spellId) end
 end
 
 local function getSpellIconRaw(spellId)
-	if C_Spell and C_Spell.GetSpellInfo then
-		local info = C_Spell.GetSpellInfo(spellId)
-		if type(info) == "table" and info.iconID then return info.iconID end
-	end
-	if GetSpellTexture then
-		local icon = GetSpellTexture(spellId)
-		if icon and icon ~= "" then return icon end
-	end
-	return nil
+	local _, icon = getCachedSpellPresentation(spellId)
+	return icon
 end
 
 local function safeGetSpellIcon(spellId) return getSpellIconRaw(spellId) or ICON_MISSING end
@@ -430,17 +487,8 @@ local function unitHasAuraBySpellId(unit, spellId)
 	if C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot then
 		local continuationToken
 		for _ = 1, AURA_SLOT_SCAN_GUARD do
-			local slots
-			if continuationToken ~= nil then
-				slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken) }
-			else
-				slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE) }
-			end
-
-			local nextToken = slots and slots[1] or nil
-			if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
-
-			for i = 2, (slots and #slots or 0) do
+			local slots, slotCount, nextToken = getHelpfulAuraSlotBuffer(unit, continuationToken)
+			for i = 2, slotCount do
 				local slot = slots[i]
 				if not (issecretvalue and issecretvalue(slot)) then
 					local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
@@ -492,6 +540,7 @@ end
 
 local function resetProviderRuntimeCache(provider)
 	if type(provider) ~= "table" then return end
+	provider.stateVersion = (tonumber(provider.stateVersion) or 0) + 1
 	provider.spellSet = nil
 	provider.spellNameSet = nil
 	provider.spellNameSetReady = nil
@@ -500,6 +549,19 @@ local function resetProviderRuntimeCache(provider)
 	provider.cachedName = nil
 	provider.cachedIcon = nil
 	provider._presentationReady = nil
+	provider._presentationAttempted = nil
+	provider.presentationRetryPending = nil
+	provider.presentationRetryCount = nil
+end
+
+local function getProviderStateVersion(provider)
+	if type(provider) ~= "table" then return 0 end
+	local version = tonumber(provider.stateVersion)
+	if not version or version <= 0 then
+		provider.stateVersion = 1
+		return 1
+	end
+	return version
 end
 
 local function setProviderDisplaySpellId(provider, spellId)
@@ -511,6 +573,7 @@ local function setProviderDisplaySpellId(provider, spellId)
 	provider.cachedName = nil
 	provider.cachedIcon = nil
 	provider._presentationReady = nil
+	provider._presentationAttempted = nil
 end
 
 local function makeSelfMissingEntry(spellId, label, countMissing, countTotal)
@@ -542,8 +605,14 @@ local function buildSelfStatus(total, missingEntries)
 	}
 end
 
-local function resolveProviderPresentation(provider)
+local function resolveProviderPresentation(provider, force)
 	if not provider then return end
+	if force ~= true then
+		if provider._presentationReady == true then return end
+		if provider._presentationAttempted == true then return end
+		if provider.presentationRetryPending == true then return end
+	end
+	provider._presentationAttempted = true
 
 	local resolvedId
 	local resolvedName
@@ -597,7 +666,7 @@ local function resolveProviderPresentation(provider)
 	provider.displaySpellId = resolvedId or preferredId or normalizeSpellId(provider.spellIds[1]) or provider.displaySpellId or provider.spellIds[1]
 	provider.cachedName = resolvedName or provider.fallbackName or "Buff"
 	provider.cachedIcon = resolvedIcon or ICON_MISSING
-	provider._presentationReady = true
+	provider._presentationReady = (resolvedName ~= nil and resolvedIcon ~= nil)
 end
 
 local function refreshProviderSpellNameSet(provider)
@@ -657,6 +726,13 @@ function Reminder:CanCheckFlaskReminder()
 	if not self:IsFlaskTrackingEnabled() then return false end
 	if not self:IsFlaskInstanceOnlyEnabled() then return true end
 	return self:IsDungeonOrRaidInstance()
+end
+
+function Reminder:CanEvaluateFlaskReminderNow()
+	if not self:CanCheckFlaskReminder() then return false end
+	-- Flask auras are not combat-whitelisted, so suppress flask reminder checks while in combat.
+	if InCombatLockdown and InCombatLockdown() then return false end
+	return true
 end
 
 function Reminder:InvalidateFlaskCache()
@@ -779,7 +855,7 @@ function Reminder:GetFlaskMissingEntry()
 end
 
 function Reminder:GetSupplementalMissingEntries()
-	if not self:CanCheckFlaskReminder() then return nil end
+	if not self:CanEvaluateFlaskReminderNow() then return nil end
 	if not canEvaluateUnit("player") then return nil end
 	local flaskEntry = self:GetFlaskMissingEntry()
 	if not flaskEntry then return nil end
@@ -809,17 +885,8 @@ function Reminder:UnitHasAnyAuraName(unit, auraNames)
 
 	local continuationToken
 	for _ = 1, AURA_SLOT_SCAN_GUARD do
-		local slots
-		if continuationToken ~= nil then
-			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken) }
-		else
-			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE) }
-		end
-
-		local nextToken = slots and slots[1] or nil
-		if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
-
-		for i = 2, (slots and #slots or 0) do
+		local slots, slotCount, nextToken = getHelpfulAuraSlotBuffer(unit, continuationToken)
+		for i = 2, slotCount do
 			local slot = slots[i]
 			if not (issecretvalue and issecretvalue(slot)) then
 				local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
@@ -843,8 +910,7 @@ end
 
 function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds)
 	if type(spellIds) ~= "table" then return 0, 0 end
-	self.runtimeUnits = self.runtimeUnits or {}
-	local units = self:CollectUnits(self.runtimeUnits)
+	local units = self:GetRosterUnits()
 
 	local total = 0
 	local missing = 0
@@ -1305,7 +1371,27 @@ function Reminder:GetFlaskOnlyProvider()
 	return self.flaskOnlyProvider
 end
 
-function Reminder:GetProvider()
+local function finalizeResolvedProvider(provider)
+	if not provider then return nil end
+	if provider.scope == nil then provider.scope = PROVIDER_SCOPE_GROUP end
+	if type(provider.spellIds) ~= "table" or #provider.spellIds <= 0 then return nil end
+	if not tonumber(provider.stateVersion) or tonumber(provider.stateVersion) <= 0 then provider.stateVersion = 1 end
+
+	if not provider.spellSet then
+		provider.spellSet = {}
+		for i = 1, #provider.spellIds do
+			local sid = normalizeSpellId(provider.spellIds[i])
+			if sid then provider.spellSet[sid] = true end
+		end
+	end
+	if not provider.displaySpellId then provider.displaySpellId = normalizeSpellId(provider.spellIds[1]) or provider.spellIds[1] end
+
+	return provider
+end
+
+function Reminder:RefreshProviderCache(force)
+	if force ~= true and self.runtimeProviderValid == true then return self.activeProvider, self.hasProviderCached == true end
+
 	local classToken = self:GetClassToken()
 	local provider
 	if classToken == "PALADIN" then
@@ -1319,27 +1405,23 @@ function Reminder:GetProvider()
 	else
 		provider = classToken and PROVIDER_BY_CLASS[classToken] or nil
 	end
-	if not provider then return nil end
-	if provider.scope == nil then provider.scope = PROVIDER_SCOPE_GROUP end
-	if type(provider.spellIds) ~= "table" or #provider.spellIds <= 0 then return nil end
 
-	if not provider.spellSet then
-		provider.spellSet = {}
-		for i = 1, #provider.spellIds do
-			local sid = normalizeSpellId(provider.spellIds[i])
-			if sid then provider.spellSet[sid] = true end
-		end
-	end
-	if provider.spellNameSet == nil or provider.spellNameSetReady ~= true then refreshProviderSpellNameSet(provider) end
-	if not provider.displaySpellId then provider.displaySpellId = normalizeSpellId(provider.spellIds[1]) or provider.spellIds[1] end
-	if not provider._presentationReady or provider.cachedIcon == ICON_MISSING or not provider.cachedName or provider.cachedName == provider.fallbackName then resolveProviderPresentation(provider) end
+	provider = finalizeResolvedProvider(provider)
+	self.activeProvider = provider
+	self.hasProviderCached = provider ~= nil
+	self.runtimeProviderValid = true
+	return provider, self.hasProviderCached
+end
 
+function Reminder:GetProvider()
+	local provider = self:RefreshProviderCache(false)
 	return provider
 end
 
 function Reminder:GetProviderName(provider)
 	if not provider then return L["Class Buff Reminder"] or "Class Buff Reminder" end
-	resolveProviderPresentation(provider)
+	if provider.cachedName and provider.cachedName ~= "" and provider.cachedName ~= provider.fallbackName then return provider.cachedName end
+	if provider._presentationAttempted ~= true then resolveProviderPresentation(provider) end
 	if provider.cachedName and provider.cachedName ~= "" then return provider.cachedName end
 	local name = safeGetSpellName(provider.displaySpellId) or provider.fallbackName or (L["Class Buff Reminder"] or "Class Buff Reminder")
 	provider.cachedName = name
@@ -1348,14 +1430,11 @@ end
 
 function Reminder:GetProviderIcon(provider)
 	if not provider then return ICON_MISSING end
-	resolveProviderPresentation(provider)
+	if provider.cachedIcon and provider.cachedIcon ~= "" and provider.cachedIcon ~= ICON_MISSING then return provider.cachedIcon end
+	if provider._presentationAttempted ~= true then resolveProviderPresentation(provider) end
 	if provider.cachedIcon and provider.cachedIcon ~= "" and provider.cachedIcon ~= ICON_MISSING then return provider.cachedIcon end
 	self:RequestProviderPresentationRefresh(provider)
-	if provider.cachedIcon and provider.cachedIcon ~= "" then return provider.cachedIcon end
-	local icon = safeGetSpellIcon(provider.displaySpellId)
-	provider.cachedIcon = icon
-	if icon == ICON_MISSING then self:RequestProviderPresentationRefresh(provider) end
-	return icon
+	return provider.cachedIcon or ICON_MISSING
 end
 
 function Reminder:RequestProviderPresentationRefresh(provider)
@@ -1373,10 +1452,17 @@ function Reminder:RequestProviderPresentationRefresh(provider)
 	C_Timer.After(0.25, function()
 		provider.presentationRetryPending = false
 		provider.presentationRetryCount = (tonumber(provider.presentationRetryCount) or 0) + 1
-		resolveProviderPresentation(provider)
+		resolveProviderPresentation(provider, true)
 		if provider.cachedIcon and provider.cachedIcon ~= "" and provider.cachedIcon ~= ICON_MISSING then provider.presentationRetryCount = 0 end
 		Reminder:RequestUpdate(true)
 	end)
+end
+
+function Reminder:InvalidateProviderAvailabilityCache()
+	self.activeProvider = nil
+	self.hasProviderCached = nil
+	self.runtimeProviderValid = nil
+	self:InvalidateGroupMissingState()
 end
 
 function Reminder:GetGrowthDirection() return normalizeGrowthDirection(getValue(DB_GROWTH_DIRECTION, defaults.growthDirection)) end
@@ -1607,6 +1693,8 @@ function Reminder:GetUnitAuraState(unit)
 			trackedCount = 0,
 			hasBuff = false,
 			initialized = false,
+			providerRef = nil,
+			providerVersion = nil,
 		}
 		self.unitAuraStates[unit] = state
 	end
@@ -1623,7 +1711,35 @@ function Reminder:ResetUnitAuraState(state)
 	state.initialized = false
 end
 
-function Reminder:InvalidateAuraStates() self.unitAuraStates = {} end
+function Reminder:PrepareUnitAuraState(unit, provider)
+	local state = self:GetUnitAuraState(unit)
+	if not state then return nil end
+	if type(provider) ~= "table" then return state end
+
+	local providerVersion = getProviderStateVersion(provider)
+	if state.providerRef ~= provider or state.providerVersion ~= providerVersion then
+		self:ResetUnitAuraState(state)
+		state.providerRef = provider
+		state.providerVersion = providerVersion
+	end
+	return state
+end
+
+function Reminder:InvalidateGroupMissingState() self.groupMissingState = nil end
+
+function Reminder:MarkAuraStatesDirty()
+	if type(self.unitAuraStates) == "table" then
+		for _, state in pairs(self.unitAuraStates) do
+			if type(state) == "table" then state.initialized = false end
+		end
+	end
+	self:InvalidateGroupMissingState()
+end
+
+function Reminder:InvalidateAuraStates()
+	self.unitAuraStates = {}
+	self:InvalidateGroupMissingState()
+end
 
 function Reminder:GetTrackableProviderAuraData(aura, provider)
 	if not aura or (issecretvalue and issecretvalue(aura)) then return nil end
@@ -1675,7 +1791,7 @@ function Reminder:RemoveProviderAuraFromState(state, auraId)
 end
 
 function Reminder:FullRefreshUnitAuraState(unit, provider)
-	local state = self:GetUnitAuraState(unit)
+	local state = self:PrepareUnitAuraState(unit, provider)
 	if not state then return nil end
 	self:ResetUnitAuraState(state)
 	if isAIFollowerUnit(unit) then
@@ -1694,17 +1810,8 @@ function Reminder:FullRefreshUnitAuraState(unit, provider)
 
 	local continuationToken
 	for _ = 1, AURA_SLOT_SCAN_GUARD do
-		local slots
-		if continuationToken ~= nil then
-			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken) }
-		else
-			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE) }
-		end
-
-		local nextToken = slots and slots[1] or nil
-		if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
-
-		for i = 2, (slots and #slots or 0) do
+		local slots, slotCount, nextToken = getHelpfulAuraSlotBuffer(unit, continuationToken)
+		for i = 2, slotCount do
 			local slot = slots[i]
 			if not (issecretvalue and issecretvalue(slot)) then
 				local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
@@ -1722,7 +1829,7 @@ function Reminder:FullRefreshUnitAuraState(unit, provider)
 end
 
 function Reminder:ApplyDeltaToUnitAuraState(unit, updateInfo, provider)
-	local state = self:GetUnitAuraState(unit)
+	local state = self:PrepareUnitAuraState(unit, provider)
 	if not state then return nil end
 	if isAIFollowerUnit(unit) then
 		self:ResetUnitAuraState(state)
@@ -1781,7 +1888,79 @@ function Reminder:ApplyDeltaToUnitAuraState(unit, updateInfo, provider)
 	return state
 end
 
-function Reminder:HasProvider() return self:GetProvider() ~= nil end
+function Reminder:IsGroupMissingStateValid(provider, state)
+	if type(provider) ~= "table" or provider.scope == PROVIDER_SCOPE_SELF then return false end
+	if type(state) ~= "table" then return false end
+	if state.providerRef ~= provider then return false end
+	if state.providerVersion ~= getProviderStateVersion(provider) then return false end
+	return state.rosterVersion == (tonumber(self.rosterUnitsVersion) or 0)
+end
+
+function Reminder:GetGroupUnitMissingStatus(provider, unit)
+	if isAIFollowerUnit(unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	if not (UnitExists and UnitExists(unit) and UnitIsConnected and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit)) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	if self:UnitHasProviderBuff(unit, provider) then return GROUP_UNIT_STATUS_PRESENT end
+	return GROUP_UNIT_STATUS_MISSING
+end
+
+function Reminder:ApplyGroupUnitMissingStatus(state, unit, nextStatus)
+	if type(state) ~= "table" or type(unit) ~= "string" or unit == "" then return end
+	state.unitStatus = state.unitStatus or {}
+	local previous = state.unitStatus[unit]
+	if previous == nextStatus then return end
+
+	if previous == GROUP_UNIT_STATUS_PRESENT or previous == GROUP_UNIT_STATUS_MISSING then state.total = math.max(0, (tonumber(state.total) or 0) - 1) end
+	if previous == GROUP_UNIT_STATUS_MISSING then state.missing = math.max(0, (tonumber(state.missing) or 0) - 1) end
+
+	if nextStatus == GROUP_UNIT_STATUS_PRESENT or nextStatus == GROUP_UNIT_STATUS_MISSING then state.total = (tonumber(state.total) or 0) + 1 end
+	if nextStatus == GROUP_UNIT_STATUS_MISSING then state.missing = (tonumber(state.missing) or 0) + 1 end
+
+	state.unitStatus[unit] = nextStatus
+end
+
+function Reminder:RebuildGroupMissingState(provider)
+	if type(provider) ~= "table" or provider.scope == PROVIDER_SCOPE_SELF then
+		self.groupMissingState = nil
+		return nil
+	end
+
+	local state = self.groupMissingState or {}
+	state.providerRef = provider
+	state.providerVersion = getProviderStateVersion(provider)
+	state.rosterVersion = tonumber(self.rosterUnitsVersion) or 0
+	state.total = 0
+	state.missing = 0
+	state.unitStatus = state.unitStatus or {}
+	wipeTable(state.unitStatus)
+
+	local units = self:GetRosterUnits()
+	for i = 1, #units do
+		local unit = units[i]
+		self:ApplyGroupUnitMissingStatus(state, unit, self:GetGroupUnitMissingStatus(provider, unit))
+	end
+
+	self.groupMissingState = state
+	return state
+end
+
+function Reminder:GetGroupMissingState(provider)
+	local state = self.groupMissingState
+	if self:IsGroupMissingStateValid(provider, state) then return state end
+	return self:RebuildGroupMissingState(provider)
+end
+
+function Reminder:RefreshGroupMissingStateUnit(provider, unit)
+	local state = self.groupMissingState
+	if not self:IsGroupMissingStateValid(provider, state) then return nil end
+	if not self:IsRosterUnit(unit) then return state end
+	self:ApplyGroupUnitMissingStatus(state, unit, self:GetGroupUnitMissingStatus(provider, unit))
+	return state
+end
+
+function Reminder:HasProvider()
+	local _, hasProvider = self:RefreshProviderCache(false)
+	return hasProvider == true
+end
 
 function Reminder:EnsureFrame()
 	if self.frame then return self.frame end
@@ -2260,27 +2439,64 @@ function Reminder:ApplyVisualSettings()
 	self:ApplySamplePreview(scaledIconSize, scale, scaledIconGap)
 end
 
-function Reminder:CollectUnits(target)
-	if not target then target = {} end
-	for i = #target, 1, -1 do
-		target[i] = nil
+function Reminder:InvalidateRosterCache()
+	self.rosterUnitsValid = nil
+	self.rosterUnitsVersion = (tonumber(self.rosterUnitsVersion) or 0) + 1
+	self:InvalidateGroupMissingState()
+end
+
+function Reminder:GetRosterUnits()
+	if self.rosterUnitsValid == true and type(self.rosterUnits) == "table" then return self.rosterUnits end
+
+	self.rosterUnits = self.rosterUnits or {}
+	self.rosterUnitLookup = self.rosterUnitLookup or {}
+	local units = self.rosterUnits
+	local lookup = self.rosterUnitLookup
+	for i = #units, 1, -1 do
+		units[i] = nil
 	end
+	wipeTable(lookup)
 
 	if IsInRaid and IsInRaid() then
 		local total = (GetNumGroupMembers and GetNumGroupMembers()) or 0
 		for i = 1, total do
-			target[#target + 1] = "raid" .. i
+			local unit = "raid" .. i
+			units[#units + 1] = unit
+			lookup[unit] = true
 		end
 	elseif IsInGroup and IsInGroup() then
-		target[#target + 1] = "player"
+		units[#units + 1] = "player"
+		lookup.player = true
 		local total = (GetNumSubgroupMembers and GetNumSubgroupMembers()) or math.max(0, ((GetNumGroupMembers and GetNumGroupMembers()) or 1) - 1)
 		for i = 1, total do
-			target[#target + 1] = "party" .. i
+			local unit = "party" .. i
+			units[#units + 1] = unit
+			lookup[unit] = true
 		end
 	else
-		target[#target + 1] = "player"
+		units[#units + 1] = "player"
+		lookup.player = true
 	end
 
+	self.rosterUnitsValid = true
+	return units
+end
+
+function Reminder:IsRosterUnit(unit)
+	if type(unit) ~= "string" or unit == "" then return false end
+	self:GetRosterUnits()
+	return self.rosterUnitLookup and self.rosterUnitLookup[unit] == true
+end
+
+function Reminder:CollectUnits(target)
+	local units = self:GetRosterUnits()
+	if not target or target == units then return units end
+	for i = #target, 1, -1 do
+		target[i] = nil
+	end
+	for i = 1, #units do
+		target[i] = units[i]
+	end
 	return target
 end
 
@@ -2290,8 +2506,7 @@ function Reminder:CollectOtherHealerUnits(target)
 		target[i] = nil
 	end
 
-	self.runtimeUnits = self.runtimeUnits or {}
-	local units = self:CollectUnits(self.runtimeUnits)
+	local units = self:GetRosterUnits()
 	for i = 1, #units do
 		local unit = units[i]
 		if unit ~= "player" and not isAIFollowerUnit(unit) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) and isUnitHealerRole(unit) then target[#target + 1] = unit end
@@ -2308,7 +2523,7 @@ function Reminder:UnitHasProviderBuff(unit, provider)
 	end
 	if type(provider.hasUnitBuffFunc) == "function" then return provider.hasUnitBuffFunc(provider, unit, self) == true end
 	if not provider.spellSet then return false end
-	local state = self:GetUnitAuraState(unit)
+	local state = self:PrepareUnitAuraState(unit, provider)
 	if not state then return false end
 	if not state.initialized then state = self:FullRefreshUnitAuraState(unit, provider) end
 	return state and state.hasBuff == true
@@ -2329,23 +2544,9 @@ function Reminder:ComputeMissing(provider)
 	self.selfProviderStatusProvider = nil
 	self.selfProviderStatus = nil
 
-	self.runtimeUnits = self.runtimeUnits or {}
-	local units = self:CollectUnits(self.runtimeUnits)
-
-	local total = 0
-	local missing = 0
-	for i = 1, #units do
-		local unit = units[i]
-		if isAIFollowerUnit(unit) then
-			local state = self:GetUnitAuraState(unit)
-			if state then self:ResetUnitAuraState(state) end
-		elseif UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			total = total + 1
-			if not self:UnitHasProviderBuff(unit, provider) then missing = missing + 1 end
-		end
-	end
-
-	return missing, total
+	local state = self:GetGroupMissingState(provider)
+	if not state then return 0, 0 end
+	return tonumber(state.missing) or 0, tonumber(state.total) or 0
 end
 
 function Reminder:IsGroupModeAllowed()
@@ -2356,7 +2557,8 @@ end
 
 function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
-	if self:HasProvider() then return true end
+	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
+	if self.hasProviderCached == true then return true end
 	return self:IsFlaskTrackingEnabled()
 end
 
@@ -2570,7 +2772,39 @@ end
 function Reminder:HandleEvent(event, unit, updateInfo)
 	if not self:ShouldRegisterRuntimeEvents() then return end
 
-	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then self:ScheduleInitialSoundSync(event) end
+	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+		self:ScheduleInitialSoundSync(event)
+		self:InvalidateProviderAvailabilityCache()
+		self:InvalidateRosterCache()
+		self:MarkAuraStatesDirty()
+		self:InvalidateFlaskCache()
+		self:RequestUpdate(true)
+		return
+	end
+
+	if event == "GROUP_ROSTER_UPDATE" then
+		self:InvalidateRosterCache()
+		self:MarkAuraStatesDirty()
+		self:RequestUpdate(true)
+		return
+	end
+
+	if event == "PLAYER_ROLES_ASSIGNED" or event == "ROLE_CHANGED_INFORM" then
+		self:RequestUpdate(true)
+		return
+	end
+
+	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+		self:RequestUpdate(true)
+		return
+	end
+
+	if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "SPELLS_CHANGED" then
+		self:InvalidateProviderAvailabilityCache()
+		self:InvalidateFlaskCache()
+		self:RequestUpdate(true)
+		return
+	end
 
 	if event == "UNIT_INVENTORY_CHANGED" then
 		if unit == "player" then
@@ -2586,9 +2820,22 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		return
 	end
 
-	if event == "BAG_UPDATE_DELAYED" or event == "PLAYER_LEVEL_UP" then
+	if event == "BAG_UPDATE_DELAYED" then
 		self:InvalidateFlaskCache()
 		self:RequestUpdate(false)
+		return
+	end
+
+	if event == "PLAYER_LEVEL_UP" then
+		self:InvalidateProviderAvailabilityCache()
+		self:InvalidateFlaskCache()
+		self:RequestUpdate(true)
+		return
+	end
+
+	if event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+		self:MarkAuraStatesDirty()
+		self:RequestUpdate(true)
 		return
 	end
 
@@ -2602,10 +2849,12 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		if isAIFollowerUnit(unit) then
 			local state = self:GetUnitAuraState(unit)
 			if state then self:ResetUnitAuraState(state) end
+			self:RefreshGroupMissingStateUnit(provider, unit)
 			return
 		end
 		if provider then
 			self:ApplyDeltaToUnitAuraState(unit, updateInfo, provider)
+			self:RefreshGroupMissingStateUnit(provider, unit)
 		else
 			local state = self:GetUnitAuraState(unit)
 			if state then self:ResetUnitAuraState(state) end
@@ -2613,9 +2862,6 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:RequestUpdate(false)
 		return
 	end
-
-	self:InvalidateAuraStates()
-	self:RequestUpdate(true)
 end
 
 function Reminder:RegisterEvents()
@@ -2632,6 +2878,8 @@ function Reminder:RegisterEvents()
 	self.eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 	self.eventFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 	self.eventFrame:RegisterEvent("ROLE_CHANGED_INFORM")
+	self.eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+	self.eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 	self.eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 	self.eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 	self.eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
@@ -3113,7 +3361,8 @@ function Reminder:OnSettingChanged()
 		self:UnregisterEditMode()
 	end
 	self:ApplyVisualSettings()
-	self:InvalidateAuraStates()
+	self:InvalidateProviderAvailabilityCache()
+	self:InvalidateRosterCache()
 	self:InvalidateFlaskCache()
 
 	if runtimeActive then

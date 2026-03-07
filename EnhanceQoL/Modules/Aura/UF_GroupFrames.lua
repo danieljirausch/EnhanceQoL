@@ -88,10 +88,27 @@ function GF.GetBuffHelpfulFilter(ac)
 	return (AURA_FILTERS and AURA_FILTERS.helpful) or "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER"
 end
 
+function GF.CaptureGroupAuraSlotResults(...)
+	GF._groupAuraSlotResultBuffer = GF._groupAuraSlotResultBuffer or {}
+	local buffer = GF._groupAuraSlotResultBuffer
+	local previousCount = GF._groupAuraSlotResultCount or 0
+	local count = select("#", ...)
+	for i = 1, count do
+		buffer[i] = select(i, ...)
+	end
+	if previousCount > count then
+		for i = count + 1, previousCount do
+			buffer[i] = nil
+		end
+	end
+	GF._groupAuraSlotResultCount = count
+	return buffer, count
+end
+
 local function queryAuraSlots(unit, filter, maxCount)
-	if not filter then return nil end
-	if maxCount then return { C_UnitAuras.GetAuraSlots(unit, filter, maxCount) } end
-	return { C_UnitAuras.GetAuraSlots(unit, filter) }
+	if not filter then return nil, 0 end
+	if maxCount then return GF.CaptureGroupAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, filter, maxCount)) end
+	return GF.CaptureGroupAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, filter))
 end
 
 local PREVIEW_SAMPLES = GFH.PREVIEW_SAMPLES or { party = {}, raid = {}, mt = {}, ma = {} }
@@ -548,7 +565,12 @@ end
 
 local roundToPixel = GFH.RoundToPixel
 
-local function roundToEvenPixel(value, scale) return roundToPixel(value, scale) end
+local function roundToEvenPixel(value, scale)
+	value = tonumber(value) or 0
+	if value == 0 then return 0 end
+	-- Snap half-size to pixel grid and double it so final size always lands on an even pixel count.
+	return roundToPixel(value * 0.5, scale) * 2
+end
 
 local layoutTexts = GFH.LayoutTexts
 
@@ -717,60 +739,58 @@ function GF.IsPartyCenterGrowthMode(cfg)
 end
 
 function GF.BuildPartyCenterGrowthNameList(cfg)
-	local names, seen = {}, {}
-	local function addName(unit)
-		if not (unit and UnitExists and UnitExists(unit)) then return end
-		local name = GFH and GFH.GetUnitFullName and GFH.GetUnitFullName(unit)
-		if not name and UnitName then
-			local rawName, realm = UnitName(unit)
-			if rawName and rawName ~= "" then
-				if realm and realm ~= "" then
-					name = rawName .. "-" .. realm
-				else
-					name = rawName
+	local sortMethod = resolveSortMethod(cfg)
+	local nameList
+
+	if sortMethod == "NAMELIST" and GFH and GFH.BuildCustomSortNameList then
+		nameList = GFH.BuildCustomSortNameList(cfg, "party")
+	else
+		local names, seen = {}, {}
+		local function addName(unit)
+			if not (unit and UnitExists and UnitExists(unit)) then return end
+			local name = GFH and GFH.GetUnitFullName and GFH.GetUnitFullName(unit)
+			if not name and UnitName then
+				local rawName, realm = UnitName(unit)
+				if rawName and rawName ~= "" then
+					if realm and realm ~= "" then
+						name = rawName .. "-" .. realm
+					else
+						name = rawName
+					end
 				end
 			end
+			if not name or seen[name] then return end
+			seen[name] = true
+			names[#names + 1] = name
 		end
-		if not name or seen[name] then return end
-		seen[name] = true
-		names[#names + 1] = name
+
+		local showPlayer = cfg and cfg.showPlayer == true
+		local showSolo = cfg and cfg.showSolo == true
+		if IsInRaid and IsInRaid() then
+			showPlayer = false
+			showSolo = false
+		end
+		if IsInGroup and IsInGroup() then
+			if showPlayer then addName("player") end
+			for i = 1, 4 do
+				addName("party" .. i)
+			end
+		elseif showSolo then
+			addName("player")
+		end
+
+		if sortMethod == "NAME" then table.sort(names) end
+		if #names > 0 then nameList = table.concat(names, ",") end
 	end
 
-	local showSolo = cfg and cfg.showSolo == true
-	if IsInRaid and IsInRaid() then showSolo = false end
-	if IsInGroup and IsInGroup() then
-		addName("player")
-		for i = 1, 4 do
-			addName("party" .. i)
-		end
-	elseif showSolo then
-		addName("player")
+	if type(nameList) ~= "string" or nameList == "" then return nil, 0, 0 end
+	local count = 0
+	for token in nameList:gmatch("[^,]+") do
+		token = tostring(token):gsub("^%s+", ""):gsub("%s+$", "")
+		if token ~= "" then count = count + 1 end
 	end
-
-	local count = #names
 	if count == 0 then return nil, 0, 0 end
-	local leftCount = floor((count - 1) / 2)
-	if count == 1 then return names[1], leftCount, count end
-
-	local left, right = {}, {}
-	for i = 2, count do
-		if i % 2 == 0 then
-			left[#left + 1] = names[i]
-		else
-			right[#right + 1] = names[i]
-		end
-	end
-
-	local ordered = {}
-	for i = #left, 1, -1 do
-		ordered[#ordered + 1] = left[i]
-	end
-	ordered[#ordered + 1] = names[1]
-	for i = 1, #right do
-		ordered[#ordered + 1] = right[i]
-	end
-
-	return table.concat(ordered, ","), leftCount, count
+	return nameList, 0, count
 end
 
 function GF.ComputePartyCenterGrowthAnchorOffset(cfg, growth, scale, countOverride)
@@ -782,23 +802,21 @@ function GF.ComputePartyCenterGrowthAnchorOffset(cfg, growth, scale, countOverri
 		count = dynamicCount or 0
 	end
 	count = max(0, floor(count + 0.5))
-	local leftCount = (count > 0) and floor((count - 1) / 2) or 0
 	scale = scale or (GFH and GFH.GetEffectiveScale and GFH.GetEffectiveScale(UIParent)) or 1
+	if count <= 0 then return 0, 0, 0 end
 
 	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0), scale)
 	local w = roundToEvenPixel(clampNumber(tonumber(cfg.width) or 100, 40, 600, 100), scale)
 	local h = roundToEvenPixel(clampNumber(tonumber(cfg.height) or 24, 10, 200, 24), scale)
 
 	if baseGrowth == "RIGHT" or baseGrowth == "LEFT" then
-		local step = roundToPixel(w + spacing, scale)
+		local totalSpan = count * w + spacing * max(0, count - 1)
 		local sign = (baseGrowth == "LEFT") and 1 or -1
-		local half = roundToPixel(w * 0.5, scale)
-		return roundToPixel(sign * leftCount * step + sign * half, scale), 0, count
+		return roundToPixel(sign * (totalSpan * 0.5), scale), 0, count
 	end
-	local step = roundToPixel(h + spacing, scale)
+	local totalSpan = count * h + spacing * max(0, count - 1)
 	local sign = (baseGrowth == "UP") and -1 or 1
-	local half = roundToPixel(h * 0.5, scale)
-	return 0, roundToPixel(sign * leftCount * step + sign * half, scale), count
+	return 0, roundToPixel(sign * (totalSpan * 0.5), scale), count
 end
 
 local function isGroupByGroup(cfg, def) return resolveGroupByValue(cfg, def) == "GROUP" end
@@ -2664,7 +2682,6 @@ local function ensureDB()
 			-- Legacy party defaults grouped by role; clear persisted values so INDEX uses party unit index order.
 			t.groupBy = nil
 			t.groupingOrder = nil
-			if GF.IsPartyCenterGrowthMode(t) then t.showPlayer = true end
 		end
 	end
 	GF._ensureSharedHealerBuffPlacement(db)
@@ -3466,7 +3483,7 @@ function GF:LayoutButton(self)
 			UFHelper.applyFont(st.groupNumberText, style.font, style.fontSize or 12, style.fontOutline)
 		end
 	end
-	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale)
+	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale, st.barGroup or st.health)
 	layoutTexts(st.power, st.powerTextLeft, st.powerTextCenter, st.powerTextRight, cfg.power, scale)
 	if st.statusText then
 		local scfg = cfg.status or {}
@@ -4882,22 +4899,22 @@ local function fullScanGroupAuras(
 	end
 
 	if wantBuff and helpfulScanFilter then
-		local helpfulSlots = queryAuraSlots(unit, helpfulScanFilter, queryMax and queryMax.helpful)
-		for i = 2, (helpfulSlots and #helpfulSlots or 0) do
+		local helpfulSlots, helpfulSlotCount = queryAuraSlots(unit, helpfulScanFilter, queryMax and queryMax.helpful)
+		for i = 2, helpfulSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, helpfulSlots[i])
 			if aura then storeAura(aura) end
 		end
 	end
 	if (wantDebuff or wantsDispel) and harmfulFilter then
-		local harmfulSlots = queryAuraSlots(unit, harmfulFilter, queryMax and queryMax.harmful)
-		for i = 2, (harmfulSlots and #harmfulSlots or 0) do
+		local harmfulSlots, harmfulSlotCount = queryAuraSlots(unit, harmfulFilter, queryMax and queryMax.harmful)
+		for i = 2, harmfulSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, harmfulSlots[i])
 			if aura then storeAura(aura) end
 		end
 	end
 	if wantExternals and externalFilter then
-		local externalSlots = queryAuraSlots(unit, externalFilter, queryMax and queryMax.external)
-		for i = 2, (externalSlots and #externalSlots or 0) do
+		local externalSlots, externalSlotCount = queryAuraSlots(unit, externalFilter, queryMax and queryMax.external)
+		for i = 2, externalSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, externalSlots[i])
 			if aura then storeAura(aura) end
 		end
@@ -5605,6 +5622,8 @@ end
 
 local function hideGroupIndicators(container)
 	if not container then return end
+	local overlay = container._eqolGroupIndicatorOverlay
+	if overlay and overlay.Hide then overlay:Hide() end
 	local indicators = container._eqolGroupIndicators
 	if not indicators then return end
 	for _, fs in pairs(indicators) do
@@ -5613,6 +5632,24 @@ local function hideGroupIndicators(container)
 			fs:Hide()
 		end
 	end
+end
+
+function GF.EnsureGroupIndicatorOverlay(container, target)
+	if not (container and target and CreateFrame) then return container end
+
+	local overlay = container._eqolGroupIndicatorOverlay
+	if not overlay then
+		overlay = CreateFrame("Frame", nil, container)
+		overlay:EnableMouse(false)
+		if overlay.SetAllPoints then overlay:SetAllPoints(container) end
+		container._eqolGroupIndicatorOverlay = overlay
+	end
+
+	if overlay.GetParent and overlay:GetParent() ~= container then overlay:SetParent(container) end
+	if overlay.SetAllPoints then overlay:SetAllPoints(container) end
+	setFrameLevelAbove(overlay, target, 10)
+	if overlay.Show then overlay:Show() end
+	return overlay
 end
 
 local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPreview, fixedSubgroup)
@@ -5626,15 +5663,63 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 		return
 	end
 
+	local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
+	local anchorMode = tostring(style.anchor or "TOPLEFT"):upper()
 	local candidates = {}
+	local function pickCandidate(current, frame, key)
+		if not frame then return current end
+		local st = getState(frame)
+		local anchorTarget = (st and st.barGroup) or frame
+		if not anchorTarget then return current end
+
+		local candidate = {
+			frame = frame,
+			key = key,
+			anchorTarget = anchorTarget,
+			left = anchorTarget.GetLeft and anchorTarget:GetLeft() or nil,
+			right = anchorTarget.GetRight and anchorTarget:GetRight() or nil,
+			top = anchorTarget.GetTop and anchorTarget:GetTop() or nil,
+			bottom = anchorTarget.GetBottom and anchorTarget:GetBottom() or nil,
+		}
+		if not current then return candidate end
+		if not (candidate.left and candidate.right and candidate.top and candidate.bottom and current.left and current.right and current.top and current.bottom) then
+			if (key or math.huge) < (current.key or math.huge) then return candidate end
+			return current
+		end
+
+		local epsilon = 0.5
+		if anchorMode == "TOPRIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		elseif anchorMode == "BOTTOMLEFT" then
+			if candidate.left < current.left - epsilon then return candidate end
+			if abs(candidate.left - current.left) <= epsilon and candidate.bottom < current.bottom - epsilon then return candidate end
+		elseif anchorMode == "BOTTOMRIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.bottom < current.bottom - epsilon then return candidate end
+		elseif anchorMode == "TOP" then
+			if candidate.top > current.top + epsilon then return candidate end
+			if abs(candidate.top - current.top) <= epsilon and candidate.left < current.left - epsilon then return candidate end
+		elseif anchorMode == "BOTTOM" then
+			if candidate.bottom < current.bottom - epsilon then return candidate end
+			if abs(candidate.bottom - current.bottom) <= epsilon and candidate.left < current.left - epsilon then return candidate end
+		elseif anchorMode == "RIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		elseif anchorMode == "CENTER" then
+			if (key or math.huge) < (current.key or math.huge) then return candidate end
+		else
+			if candidate.left < current.left - epsilon then return candidate end
+			if abs(candidate.left - current.left) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		end
+
+		return current
+	end
 
 	local fixedGroup = tonumber(fixedSubgroup)
 	if fixedGroup and fixedGroup >= 1 and fixedGroup <= 8 then
 		for visualIndex, frame in ipairs(frames) do
-			if frame and frame.IsShown and frame:IsShown() then
-				candidates[fixedGroup] = { frame = frame, key = visualIndex }
-				break
-			end
+			if frame and frame.IsShown and frame:IsShown() then candidates[fixedGroup] = pickCandidate(candidates[fixedGroup], frame, visualIndex) end
 		end
 	else
 		for visualIndex, frame in ipairs(frames) do
@@ -5650,8 +5735,7 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 
 				if subgroup then
 					subgroup = tonumber(subgroup) or subgroup
-					local current = candidates[subgroup]
-					if not current or visualIndex < current.key then candidates[subgroup] = { frame = frame, key = visualIndex } end
+					candidates[subgroup] = pickCandidate(candidates[subgroup], frame, visualIndex)
 				end
 			end
 		end
@@ -5667,24 +5751,39 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 		indicators = {}
 		container._eqolGroupIndicators = indicators
 	end
-	local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
 	local format = resolveGroupIndicatorFormat(cfg, def)
 	local scale = GFH.GetEffectiveScale(container)
 	if not scale or scale <= 0 then scale = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1 end
 	local used = {}
+	local overlayTarget
+
+	for subgroup, entry in pairs(candidates) do
+		local target = entry and entry.frame
+		local anchorTarget = entry and entry.anchorTarget
+		if anchorTarget then
+			if not overlayTarget then
+				overlayTarget = anchorTarget
+			else
+				local currentLevel = overlayTarget.GetFrameLevel and overlayTarget:GetFrameLevel() or 0
+				local candidateLevel = anchorTarget.GetFrameLevel and anchorTarget:GetFrameLevel() or 0
+				if candidateLevel > currentLevel then overlayTarget = anchorTarget end
+			end
+		end
+	end
+
+	local overlayParent = GF.EnsureGroupIndicatorOverlay(container, overlayTarget)
 
 	for subgroup, entry in pairs(candidates) do
 		local fs = indicators[subgroup]
-		if not fs and container.CreateFontString then
-			fs = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		if not fs and overlayParent and overlayParent.CreateFontString then
+			fs = overlayParent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			indicators[subgroup] = fs
 		end
 		if fs and entry and entry.frame then
 			local target = entry.frame
-			local st = target and getState(target)
-			local anchorTarget = (st and st.barGroup) or target
+			local anchorTarget = entry.anchorTarget or target
 			if anchorTarget then
-				if fs.GetParent and fs:GetParent() ~= container then fs:SetParent(container) end
+				if fs.GetParent and fs:GetParent() ~= overlayParent then fs:SetParent(overlayParent) end
 				if fs.SetDrawLayer then fs:SetDrawLayer("OVERLAY", 7) end
 				if UFHelper and UFHelper.applyFont then UFHelper.applyFont(fs, style.font, style.fontSize or 12, style.fontOutline) end
 				applyGroupIndicatorAnchor(fs, style.anchor, style.offset, scale, anchorTarget)
@@ -7120,25 +7219,6 @@ function GF:UpdatePreviewLayout(kind)
 	local samples = (GFH.BuildPreviewSampleList and GFH.BuildPreviewSampleList(kind, cfg, PREVIEW_SAMPLES[kind], sampleLimit, 2, 3)) or (PREVIEW_SAMPLES[kind] or {})
 	local growthMode, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 	local centerGrowthActive = (kind == "party") and (growthMode == "CENTER_HORIZONTAL" or growthMode == "CENTER_VERTICAL")
-	if centerGrowthActive and #samples > 1 then
-		local left, right = {}, {}
-		for i = 2, #samples do
-			if i % 2 == 0 then
-				left[#left + 1] = samples[i]
-			else
-				right[#right + 1] = samples[i]
-			end
-		end
-		local ordered = {}
-		for i = #left, 1, -1 do
-			ordered[#ordered + 1] = left[i]
-		end
-		ordered[#ordered + 1] = samples[1]
-		for i = 1, #right do
-			ordered[#ordered + 1] = right[i]
-		end
-		samples = ordered
-	end
 	GF._previewSampleCount = GF._previewSampleCount or {}
 	GF._previewSampleCount[kind] = #samples
 
@@ -7287,17 +7367,14 @@ function GF:UpdatePreviewLayout(kind)
 	if centerGrowthActive then previewAnchorPoint = GF.GetPartyCenterGrowthRelativePoint(growth) end
 	local previewCenterOffsetX, previewCenterOffsetY = 0, 0
 	if centerGrowthActive and maxShown and maxShown > 0 then
-		local leftCount = floor((maxShown - 1) / 2)
 		if isHorizontal then
 			local sign = (growth == "LEFT") and 1 or -1
-			local step = roundToPixel(visualW + visualSpacing, scale)
-			local half = roundToPixel(visualW * 0.5, scale)
-			previewCenterOffsetX = roundToPixel(sign * leftCount * step + sign * half, scale)
+			local totalSpan = maxShown * visualW + visualSpacing * max(0, maxShown - 1)
+			previewCenterOffsetX = roundToPixel(sign * (totalSpan * 0.5), scale)
 		else
 			local sign = (growth == "UP") and -1 or 1
-			local step = roundToPixel(visualH + visualSpacing, scale)
-			local half = roundToPixel(visualH * 0.5, scale)
-			previewCenterOffsetY = roundToPixel(sign * leftCount * step + sign * half, scale)
+			local totalSpan = maxShown * visualH + visualSpacing * max(0, maxShown - 1)
+			previewCenterOffsetY = roundToPixel(sign * (totalSpan * 0.5), scale)
 		end
 	end
 	for i, btn in ipairs(frames) do
@@ -8261,7 +8338,7 @@ function GF:ApplyHeaderAttributes(kind)
 		cfg.groupingOrder = nil
 		setAttr("showParty", true)
 		setAttr("showRaid", false)
-		setAttr("showPlayer", centerGrowthActive or (cfg.showPlayer and true or false))
+		setAttr("showPlayer", cfg.showPlayer and true or false)
 		setAttr("showSolo", cfg.showSolo and true or false)
 		setAttr("groupBy", nil)
 		setAttr("groupingOrder", nil)
@@ -8269,7 +8346,7 @@ function GF:ApplyHeaderAttributes(kind)
 		setAttr("roleFilter", nil)
 		setAttr("strictFiltering", false)
 		sortMethod = centerGrowthActive and "NAMELIST" or resolveSortMethod(cfg)
-		local sortDir = centerGrowthActive and "ASC" or ((GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(cfg.sortDir)) or "ASC")
+		local sortDir = (GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(cfg.sortDir)) or "ASC"
 		setAttr("sortMethod", sortMethod)
 		setAttr("sortDir", sortDir)
 		if sortMethod == "NAMELIST" then
@@ -10893,11 +10970,7 @@ local function buildEditModeSettings(kind, editModeId)
 				local mode, baseGrowth = GF.ResolveUnitGrowthDirection(value, cfg.growth or "DOWN")
 				if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 				cfg.growth = mode
-				if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then cfg.showPlayer = true end
-				if EditMode and EditMode.SetValue then
-					EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true)
-					if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then EditMode:SetValue(editModeId, "showPlayer", true, nil, true) end
-				end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true) end
 				if raidKind then
 					local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 					if GFH.ResolveGroupGrowthDirection then
@@ -10934,11 +11007,7 @@ local function buildEditModeSettings(kind, editModeId)
 						local mode, baseGrowth = GF.ResolveUnitGrowthDirection(option.value, cfg.growth or "DOWN")
 						if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 						cfg.growth = mode
-						if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then cfg.showPlayer = true end
-						if EditMode and EditMode.SetValue then
-							EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true)
-							if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then EditMode:SetValue(editModeId, "showPlayer", true, nil, true) end
-						end
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true) end
 						if raidKind then
 							local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 							if GFH.ResolveGroupGrowthDirection then
@@ -18771,14 +18840,9 @@ local function buildEditModeSettings(kind, editModeId)
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
-				if GF.IsPartyCenterGrowthMode(cfg) and value ~= true then value = true end
 				cfg.showPlayer = value and true or false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "showPlayer", cfg.showPlayer, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
-			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
 			end,
 		}
 		settings[#settings + 1] = {
@@ -18862,10 +18926,6 @@ local function buildEditModeSettings(kind, editModeId)
 					end)
 				end
 			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
-			end,
 		}
 		settings[#settings + 1] = {
 			name = "Sort direction",
@@ -18896,10 +18956,6 @@ local function buildEditModeSettings(kind, editModeId)
 						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
 					end)
 				end
-			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
 			end,
 		}
 	elseif raidLikeKind then
@@ -19538,7 +19594,6 @@ local function applyEditModeData(kind, data)
 		local mode, baseGrowth = GF.ResolveUnitGrowthDirection(data.growth, cfg.growth or "DOWN")
 		if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 		cfg.growth = mode or "DOWN"
-		if kind == "party" and (cfg.growth == "CENTER_HORIZONTAL" or cfg.growth == "CENTER_VERTICAL") then cfg.showPlayer = true end
 	end
 	if kind == "raid" and data.groupGrowth then
 		local _, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
@@ -20346,7 +20401,6 @@ local function applyEditModeData(kind, data)
 	if kind == "party" then
 		if data.showPlayer ~= nil then cfg.showPlayer = data.showPlayer and true or false end
 		if data.showSolo ~= nil then cfg.showSolo = data.showSolo and true or false end
-		if GF.IsPartyCenterGrowthMode(cfg) then cfg.showPlayer = true end
 		local custom = GFH.EnsureCustomSortConfig(cfg)
 		local incomingSortMethod
 		if data.sortMethod ~= nil then

@@ -946,6 +946,10 @@ local function createCooldownViewerDropdowns(category, expandable)
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,
 			text = L["cooldownManagerShowTarget"] or L["visibilityRule_playerHasTarget"] or "When I have a target",
 		},
+		{
+			value = COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN,
+			text = L["visibilityRule_alwaysHidden"] or "Always hidden",
+		},
 	}
 	local labels = {
 		EssentialCooldownViewer = L["cooldownViewerEssential"] or "Essential Cooldown Viewer",

@@ -7,6 +7,7 @@ local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local LDB = LibStub("LibDataBroker-1.1", true)
+local issecretvalue = _G.issecretvalue
 
 local DEFAULT_TEXT_ALPHA = 100
 local DEFAULT_BACKDROP_ALPHA = 0.5
@@ -88,6 +89,13 @@ end
 local function clamp(value, minV, maxV)
 	if value < minV then return minV end
 	if value > maxV then return maxV end
+	return value
+end
+
+local function isSecretValue(value) return issecretvalue and issecretvalue(value) end
+
+local function sanitizeValue(value)
+	if isSecretValue(value) then return nil end
 	return value
 end
 
@@ -1969,7 +1977,8 @@ function DataPanel.Create(id, name, existingOnly)
 		self.order[#self.order + 1] = name
 
 		local function cb(payload)
-			payload = payload or {}
+			payload = sanitizeValue(payload) or {}
+			if type(payload) ~= "table" then payload = {} end
 			data.lastPayload = payload
 			local layoutNeedsRefresh = false
 			local hasSecureParts = payloadHasSecureParts(payload)
@@ -2006,8 +2015,9 @@ function DataPanel.Create(id, name, existingOnly)
 				data.hover = nil
 				data.OnMouseEnter = nil
 				data.OnMouseLeave = nil
-				data.ignoreMenuModifier = payload.ignoreMenuModifier
-				if payload.OnClick ~= nil then data.OnClick = payload.OnClick end
+				data.ignoreMenuModifier = sanitizeValue(payload.ignoreMenuModifier)
+				local onClick = sanitizeValue(payload.OnClick)
+				if onClick ~= nil then data.OnClick = onClick end
 				return
 			elseif data.hidden then
 				data.hidden = nil
@@ -2337,14 +2347,15 @@ function DataPanel.Create(id, name, existingOnly)
 					end
 				end
 			end
-			data.tooltip = payload.tooltip
-			data.perCurrency = payload.perCurrency
-			data.showDescription = payload.showDescription
-			data.hover = payload.hover
-			data.OnMouseEnter = payload.OnMouseEnter
-			data.OnMouseLeave = payload.OnMouseLeave
-			data.ignoreMenuModifier = payload.ignoreMenuModifier
-			if payload.OnClick ~= nil then data.OnClick = payload.OnClick end
+			data.tooltip = sanitizeValue(payload.tooltip)
+			data.perCurrency = sanitizeValue(payload.perCurrency)
+			data.showDescription = sanitizeValue(payload.showDescription)
+			data.hover = sanitizeValue(payload.hover)
+			data.OnMouseEnter = sanitizeValue(payload.OnMouseEnter)
+			data.OnMouseLeave = sanitizeValue(payload.OnMouseLeave)
+			data.ignoreMenuModifier = sanitizeValue(payload.ignoreMenuModifier)
+			local onClick = sanitizeValue(payload.OnClick)
+			if onClick ~= nil then data.OnClick = onClick end
 			if hasSecureParts then data.secureInitialized = true end
 			if data.pendingPayload then
 				data.pendingPayload = nil

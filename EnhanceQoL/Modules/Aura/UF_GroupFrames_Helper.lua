@@ -287,8 +287,9 @@ function H.SnapPointOffsets(relativeFrame, relativePoint, x, y, scale)
 	return H.RoundToPixel(x, scale), H.RoundToPixel(y, scale)
 end
 
-function H.LayoutTexts(bar, leftFS, centerFS, rightFS, cfg, scale)
+function H.LayoutTexts(bar, leftFS, centerFS, rightFS, cfg, scale, anchorFrame)
 	if not bar then return end
+	anchorFrame = anchorFrame or bar
 	local leftCfg = (cfg and cfg.offsetLeft) or { x = 6, y = 0 }
 	local centerCfg = (cfg and cfg.offsetCenter) or { x = 0, y = 0 }
 	local rightCfg = (cfg and cfg.offsetRight) or { x = -6, y = 0 }
@@ -300,17 +301,17 @@ function H.LayoutTexts(bar, leftFS, centerFS, rightFS, cfg, scale)
 	local ry = H.RoundToPixel(rightCfg.y or 0, scale)
 	if leftFS then
 		leftFS:ClearAllPoints()
-		leftFS:SetPoint("LEFT", bar, "LEFT", lx, ly)
+		leftFS:SetPoint("LEFT", anchorFrame, "LEFT", lx, ly)
 		leftFS:SetJustifyH("LEFT")
 	end
 	if centerFS then
 		centerFS:ClearAllPoints()
-		centerFS:SetPoint("CENTER", bar, "CENTER", cx, cy)
+		centerFS:SetPoint("CENTER", anchorFrame, "CENTER", cx, cy)
 		centerFS:SetJustifyH("CENTER")
 	end
 	if rightFS then
 		rightFS:ClearAllPoints()
-		rightFS:SetPoint("RIGHT", bar, "RIGHT", rx, ry)
+		rightFS:SetPoint("RIGHT", anchorFrame, "RIGHT", rx, ry)
 		rightFS:SetJustifyH("RIGHT")
 	end
 end
@@ -1315,6 +1316,25 @@ function H.BuildPreviewSampleList(kind, cfg, baseSamples, limit, quotaTanks, quo
 	local base = baseSamples or {}
 	if kind ~= "raid" and kind ~= "party" then return base end
 	local isParty = kind == "party"
+	if isParty then
+		local showPlayer = true
+		if cfg and cfg.showPlayer ~= nil then showPlayer = cfg.showPlayer == true end
+		if not showPlayer and #base > 0 then
+			local removeIndex = #base
+			for i = #base, 1, -1 do
+				if base[i] and base[i].role == "DAMAGER" then
+					removeIndex = i
+					break
+				end
+			end
+			local filtered = {}
+			-- Preserve tank/healer samples in the 4-unit preview and drop one DPS instead.
+			for i = 1, #base do
+				if i ~= removeIndex then filtered[#filtered + 1] = base[i] end
+			end
+			base = filtered
+		end
+	end
 
 	local groupFilter = cfg and cfg.groupFilter
 	local roleFilter = cfg and cfg.roleFilter

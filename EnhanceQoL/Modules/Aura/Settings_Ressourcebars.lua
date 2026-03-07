@@ -148,25 +148,34 @@ local function maybeAutoEnableBars(specIndex, specCfg)
 				specCfg[pType].enabled = true
 				if pType == mainType and pType ~= "HEALTH" then
 					local a = specCfg[pType].anchor or {}
-					a.point = a.point or "CENTER"
-					a.relativePoint = a.relativePoint or "CENTER"
-					local targetFrame = a.relativeFrame or frameNameFor("HEALTH")
-					if not selection.HEALTH and targetFrame == frameNameFor("HEALTH") then targetFrame = nil end
-					a.relativeFrame = targetFrame
-					a.x = a.x or 0
-					a.y = a.y or -2
-					a.autoSpacing = a.autoSpacing or nil
-					a.matchRelativeWidth = a.matchRelativeWidth or true
+					local explicitRelative = type(a.relativeFrame) == "string" and a.relativeFrame ~= ""
+					local targetFrame = explicitRelative and a.relativeFrame or frameNameFor("HEALTH")
+					if not selection.HEALTH and targetFrame == frameNameFor("HEALTH") and not explicitRelative then targetFrame = nil end
+					if not explicitRelative and targetFrame and targetFrame ~= "" and targetFrame ~= "UIParent" then
+						a.point = "TOPLEFT"
+						a.relativePoint = "BOTTOMLEFT"
+						a.relativeFrame = targetFrame
+						a.x = 0
+						a.y = (ResourceBars and ResourceBars.DEFAULT_STACK_SPACING) or 0
+						a.autoSpacing = true
+						a.matchRelativeWidth = a.matchRelativeWidth or true
+					else
+						a.point = a.point or "CENTER"
+						a.relativePoint = a.relativePoint or "CENTER"
+						a.relativeFrame = targetFrame
+						a.x = a.x or 0
+						a.y = a.y or -2
+						a.autoSpacing = a.autoSpacing or nil
+						a.matchRelativeWidth = a.matchRelativeWidth or true
+					end
 					specCfg[pType].anchor = a
 					prevFrame = frameNameFor(pType)
 				elseif pType ~= "HEALTH" then
 					local a = specCfg[pType].anchor or {}
-					a.point = a.point or "CENTER"
-					a.relativePoint = a.relativePoint or "CENTER"
 					local explicitRelative = type(a.relativeFrame) == "string" and a.relativeFrame ~= ""
-					local chained = false
+					local targetFrame = explicitRelative and a.relativeFrame or nil
 					if not explicitRelative then
-						local targetFrame = frameNameFor("HEALTH")
+						targetFrame = frameNameFor("HEALTH")
 						if class == "DRUID" then
 							if pType == "COMBO_POINTS" then
 								targetFrame = frameNameFor("ENERGY")
@@ -177,13 +186,23 @@ local function maybeAutoEnableBars(specIndex, specCfg)
 						else
 							targetFrame = prevFrame
 						end
-						a.relativeFrame = targetFrame
-						chained = targetFrame and targetFrame ~= ""
 					end
-					a.x = a.x or 0
-					if chained then a.y = a.y or -2 end
-					a.autoSpacing = a.autoSpacing or nil
-					if chained then a.matchRelativeWidth = a.matchRelativeWidth or true end
+					local chained = (not explicitRelative) and targetFrame and targetFrame ~= "" and targetFrame ~= "UIParent"
+					if chained then
+						a.point = "TOPLEFT"
+						a.relativePoint = "BOTTOMLEFT"
+						a.relativeFrame = targetFrame
+						a.x = 0
+						a.y = (ResourceBars and ResourceBars.DEFAULT_STACK_SPACING) or 0
+						a.autoSpacing = true
+						a.matchRelativeWidth = a.matchRelativeWidth or true
+					else
+						a.point = a.point or "CENTER"
+						a.relativePoint = a.relativePoint or "CENTER"
+						a.x = a.x or 0
+						if not explicitRelative then a.relativeFrame = targetFrame end
+						a.autoSpacing = a.autoSpacing or nil
+					end
 					specCfg[pType].anchor = a
 					if class ~= "DRUID" then prevFrame = frameNameFor(pType) end
 				else
@@ -1320,7 +1339,7 @@ local function registerEditModeBars()
 						queueRefresh()
 					end,
 					default = (cfg and cfg.separatedOffset) or 0,
-					isShown = function() return barType ~= "RUNES" and barType ~= "ESSENCE" end,
+					isShown = function() return true end,
 					isEnabled = function()
 						local c = curSpecCfg()
 						if not c then return false end
@@ -1933,12 +1952,13 @@ local function registerEditModeBars()
 					{ key = "PERCENT", label = STATUS_TEXT_PERCENT },
 					{ key = "CURMAX", label = L["Current/Max"] or "Current/Max" },
 					{ key = "CURRENT", label = L["Current"] or "Current" },
+					{ key = "CURPERCENT", label = L["Current - Percent"] or "Current - Percent" },
 					{ key = "NONE", label = NONE },
 				}
 				settingsList[#settingsList + 1] = {
 					name = L["Text"] or STATUS_TEXT,
 					kind = settingType.Dropdown,
-					height = 180,
+					height = 220,
 					field = "textStyle",
 					parentId = "textsettings",
 					get = function()
@@ -2521,7 +2541,7 @@ local function registerEditModeBars()
 					}
 				end
 
-					if barType == "HOLY_POWER" then
+				if barType == "HOLY_POWER" then
 					settingsList[#settingsList + 1] = {
 						name = L["Use 3 HP color"] or "Use custom color at 3 Holy Power",
 						kind = settingType.CheckboxColor,
@@ -2954,11 +2974,11 @@ local function registerEditModeBars()
 				}
 			end
 
-				if barType == "STAGGER" then
-					settingsList[#settingsList + 1] = {
-						name = L["Stagger colors"] or "Stagger colors",
-						kind = settingType.Collapsible,
-						id = "staggercolors",
+			if barType == "STAGGER" then
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger colors"] or "Stagger colors",
+					kind = settingType.Collapsible,
+					id = "staggercolors",
 					defaultCollapsed = true,
 				}
 
@@ -3074,240 +3094,224 @@ local function registerEditModeBars()
 						local c = curSpecCfg()
 						return c and c.staggerHighColors == true
 					end,
-					}
+				}
+			end
+
+			if barType ~= "HEALTH" and barType ~= "STAGGER" then
+				local function thresholdColorModeAndCap()
+					if barType == "VOID_METAMORPHOSIS" then return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_VOID_METAMORPHOSIS, 1 end
+					if barType == "MANA" or barType == "ENERGY" or barType == "RAGE" or barType == "FURY" or barType == "FOCUS" or barType == "INSANITY" or barType == "LUNAR_POWER" then
+						return "PERCENT", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_PERCENT, 0
+					end
+					if ResourceBars and ResourceBars.GetThresholdColorModeAndCap then
+						local mode, cap, minValue = ResourceBars.GetThresholdColorModeAndCap(barType)
+						return mode or "ABSOLUTE", tonumber(cap) or ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP, tonumber(minValue) or 1
+					end
+					if ResourceBars and ResourceBars.separatorEligible and ResourceBars.separatorEligible[barType] then return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP, 1 end
+					return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_CONTINUOUS, 1
 				end
 
-					if barType ~= "HEALTH" and barType ~= "STAGGER" then
-						local function thresholdColorModeAndCap()
-							if barType == "VOID_METAMORPHOSIS" then return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_VOID_METAMORPHOSIS, 1 end
-							if
-								barType == "MANA"
-								or barType == "ENERGY"
-								or barType == "RAGE"
-								or barType == "FURY"
-								or barType == "FOCUS"
-								or barType == "INSANITY"
-								or barType == "LUNAR_POWER"
-							then
-								return "PERCENT", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_PERCENT, 0
-							end
-							if ResourceBars and ResourceBars.GetThresholdColorModeAndCap then
-								local mode, cap, minValue = ResourceBars.GetThresholdColorModeAndCap(barType)
-								return mode or "ABSOLUTE", tonumber(cap) or ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP, tonumber(minValue) or 1
-							end
-							if ResourceBars and ResourceBars.separatorEligible and ResourceBars.separatorEligible[barType] then
-								return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP, 1
-							end
-						return "ABSOLUTE", ABSOLUTE_THRESHOLD_COLOR_VALUE_CAP_CONTINUOUS, 1
+				local thresholdMode, thresholdValueCap, thresholdValueMin = thresholdColorModeAndCap()
+				local isPercentThresholdMode = thresholdMode == "PERCENT"
+
+				local function clampAbsoluteThresholdValue(value)
+					local n = tonumber(value)
+					if n == nil then return nil end
+					if isPercentThresholdMode then
+						n = math.floor((n * 10) + 0.5) / 10
+					else
+						n = math.floor(n + 0.5)
 					end
+					if n < thresholdValueMin then n = thresholdValueMin end
+					if n > thresholdValueCap then n = thresholdValueCap end
+					return n
+				end
 
-					local thresholdMode, thresholdValueCap, thresholdValueMin = thresholdColorModeAndCap()
-					local isPercentThresholdMode = thresholdMode == "PERCENT"
-
-						local function clampAbsoluteThresholdValue(value)
-							local n = tonumber(value)
-							if n == nil then return nil end
-							if isPercentThresholdMode then
-								n = math.floor((n * 10) + 0.5) / 10
-							else
-								n = math.floor(n + 0.5)
-							end
-							if n < thresholdValueMin then n = thresholdValueMin end
-							if n > thresholdValueCap then n = thresholdValueCap end
-							return n
-						end
-
-					local function getDefaultAbsoluteThresholdPoint(index)
-						if ResourceBars and ResourceBars.GetDefaultAbsoluteThresholdColorPoint then
-							local value, color = ResourceBars.GetDefaultAbsoluteThresholdColorPoint(index, barType)
-							local r, g, b, a = toColorComponents(color, { 1, 1, 1, 1 })
-							return clampAbsoluteThresholdValue(value) or clampAbsoluteThresholdValue(index) or thresholdValueMin, { r, g, b, a }
-						end
-						local fallback = ABSOLUTE_THRESHOLD_COLOR_DEFAULTS[index] or ABSOLUTE_THRESHOLD_COLOR_DEFAULTS[#ABSOLUTE_THRESHOLD_COLOR_DEFAULTS]
-							or { value = index, color = { 1, 1, 1, 1 } }
-						local value = clampAbsoluteThresholdValue(fallback.value or fallback[1]) or clampAbsoluteThresholdValue(index) or 1
-						local color = fallback.color or fallback[2] or { 1, 1, 1, 1 }
+				local function getDefaultAbsoluteThresholdPoint(index)
+					if ResourceBars and ResourceBars.GetDefaultAbsoluteThresholdColorPoint then
+						local value, color = ResourceBars.GetDefaultAbsoluteThresholdColorPoint(index, barType)
 						local r, g, b, a = toColorComponents(color, { 1, 1, 1, 1 })
-						return value, { r, g, b, a }
+						return clampAbsoluteThresholdValue(value) or clampAbsoluteThresholdValue(index) or thresholdValueMin, { r, g, b, a }
 					end
+					local fallback = ABSOLUTE_THRESHOLD_COLOR_DEFAULTS[index] or ABSOLUTE_THRESHOLD_COLOR_DEFAULTS[#ABSOLUTE_THRESHOLD_COLOR_DEFAULTS] or { value = index, color = { 1, 1, 1, 1 } }
+					local value = clampAbsoluteThresholdValue(fallback.value or fallback[1]) or clampAbsoluteThresholdValue(index) or 1
+					local color = fallback.color or fallback[2] or { 1, 1, 1, 1 }
+					local r, g, b, a = toColorComponents(color, { 1, 1, 1, 1 })
+					return value, { r, g, b, a }
+				end
 
-					local function isAbsoluteThresholdColorsEnabled()
-						local c = curSpecCfg()
-						return c and c.useAbsoluteThresholdColors == true
+				local function isAbsoluteThresholdColorsEnabled()
+					local c = curSpecCfg()
+					return c and c.useAbsoluteThresholdColors == true
+				end
+
+				local function getAbsoluteThresholdPointCount()
+					local c = curSpecCfg()
+					local count = tonumber(c and c.absoluteThresholdColorPointCount) or tonumber(cfg and cfg.absoluteThresholdColorPointCount) or ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT
+					if count < 1 then count = 1 end
+					if count > ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS then count = ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS end
+					return math.floor(count + 0.5)
+				end
+
+				local function ensureAbsoluteThresholdPoint(index)
+					local c = curSpecCfg()
+					if not c then return nil end
+					if type(c.absoluteThresholdColorPoints) ~= "table" then c.absoluteThresholdColorPoints = {} end
+					local point = c.absoluteThresholdColorPoints[index]
+					if type(point) ~= "table" then
+						point = {}
+						c.absoluteThresholdColorPoints[index] = point
 					end
+					local defaultValue, defaultColor = getDefaultAbsoluteThresholdPoint(index)
+					local value = clampAbsoluteThresholdValue(point.value or point[1]) or defaultValue
+					point.value = value
+					local color = point.color or point[2]
+					local r, g, b, a = toColorComponents(color, defaultColor)
+					point.color = { r, g, b, a }
+					return point, defaultValue, defaultColor
+				end
 
-					local function getAbsoluteThresholdPointCount()
-						local c = curSpecCfg()
-						local count = tonumber(c and c.absoluteThresholdColorPointCount) or tonumber(cfg and cfg.absoluteThresholdColorPointCount) or ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT
-						if count < 1 then count = 1 end
-						if count > ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS then count = ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS end
-						return math.floor(count + 0.5)
-					end
+				local function getAbsoluteThresholdPointValue(index)
+					local c = curSpecCfg()
+					local points = (c and c.absoluteThresholdColorPoints)
+					if type(points) ~= "table" then points = cfg and cfg.absoluteThresholdColorPoints end
+					local point = type(points) == "table" and points[index] or nil
+					local defaultValue = select(1, getDefaultAbsoluteThresholdPoint(index))
+					return clampAbsoluteThresholdValue(point and (point.value or point[1])) or defaultValue
+				end
 
-					local function ensureAbsoluteThresholdPoint(index)
-						local c = curSpecCfg()
-						if not c then return nil end
-						if type(c.absoluteThresholdColorPoints) ~= "table" then c.absoluteThresholdColorPoints = {} end
-						local point = c.absoluteThresholdColorPoints[index]
-						if type(point) ~= "table" then
-							point = {}
-							c.absoluteThresholdColorPoints[index] = point
-						end
-						local defaultValue, defaultColor = getDefaultAbsoluteThresholdPoint(index)
-						local value = clampAbsoluteThresholdValue(point.value or point[1]) or defaultValue
-						point.value = value
-						local color = point.color or point[2]
-						local r, g, b, a = toColorComponents(color, defaultColor)
-						point.color = { r, g, b, a }
-						return point, defaultValue, defaultColor
-					end
+				local function setAbsoluteThresholdPointValue(index, value)
+					local c = curSpecCfg()
+					if not c then return end
+					local point, defaultValue = ensureAbsoluteThresholdPoint(index)
+					if not point then return end
+					point.value = clampAbsoluteThresholdValue(value) or defaultValue
+					queueRefresh()
+				end
 
-					local function getAbsoluteThresholdPointValue(index)
-						local c = curSpecCfg()
-						local points = (c and c.absoluteThresholdColorPoints)
-						if type(points) ~= "table" then points = cfg and cfg.absoluteThresholdColorPoints end
-						local point = type(points) == "table" and points[index] or nil
-						local defaultValue = select(1, getDefaultAbsoluteThresholdPoint(index))
-						return clampAbsoluteThresholdValue(point and (point.value or point[1])) or defaultValue
-					end
+				local function getAbsoluteThresholdPointUIColor(index)
+					local c = curSpecCfg()
+					local points = (c and c.absoluteThresholdColorPoints)
+					if type(points) ~= "table" then points = cfg and cfg.absoluteThresholdColorPoints end
+					local point = type(points) == "table" and points[index] or nil
+					local _, defaultColor = getDefaultAbsoluteThresholdPoint(index)
+					local color = point and (point.color or point[2]) or defaultColor
+					local r, g, b, a = toColorComponents(color, defaultColor)
+					return { r = r, g = g, b = b, a = a }
+				end
 
-					local function setAbsoluteThresholdPointValue(index, value)
+				local function setAbsoluteThresholdPointColor(index, value)
+					local c = curSpecCfg()
+					if not c then return end
+					local point, _, defaultColor = ensureAbsoluteThresholdPoint(index)
+					if not point then return end
+					point.color = toColorArray(value, defaultColor)
+					queueRefresh()
+				end
+
+				settingsList[#settingsList + 1] = {
+					name = (isPercentThresholdMode and (L["Threshold colors"] or "Threshold colors")) or (L["Absolute threshold colors"] or "Absolute threshold colors"),
+					kind = settingType.Collapsible,
+					id = "absolutethresholdcolors",
+					defaultCollapsed = true,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = (isPercentThresholdMode and (L["Use threshold colors"] or "Use threshold colors")) or (L["Use absolute threshold colors"] or "Use absolute threshold colors"),
+					kind = settingType.Checkbox,
+					field = "useAbsoluteThresholdColors",
+					parentId = "absolutethresholdcolors",
+					default = false,
+					get = isAbsoluteThresholdColorsEnabled,
+					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						local point, defaultValue = ensureAbsoluteThresholdPoint(index)
-						if not point then return end
-						point.value = clampAbsoluteThresholdValue(value) or defaultValue
-						queueRefresh()
-					end
-
-					local function getAbsoluteThresholdPointUIColor(index)
-						local c = curSpecCfg()
-						local points = (c and c.absoluteThresholdColorPoints)
-						if type(points) ~= "table" then points = cfg and cfg.absoluteThresholdColorPoints end
-						local point = type(points) == "table" and points[index] or nil
-						local _, defaultColor = getDefaultAbsoluteThresholdPoint(index)
-						local color = point and (point.color or point[2]) or defaultColor
-						local r, g, b, a = toColorComponents(color, defaultColor)
-						return { r = r, g = g, b = b, a = a }
-					end
-
-					local function setAbsoluteThresholdPointColor(index, value)
-						local c = curSpecCfg()
-						if not c then return end
-						local point, _, defaultColor = ensureAbsoluteThresholdPoint(index)
-						if not point then return end
-						point.color = toColorArray(value, defaultColor)
-						queueRefresh()
-					end
-
-					settingsList[#settingsList + 1] = {
-						name = (isPercentThresholdMode and (L["Threshold colors"] or "Threshold colors")) or (L["Absolute threshold colors"] or "Absolute threshold colors"),
-						kind = settingType.Collapsible,
-						id = "absolutethresholdcolors",
-						defaultCollapsed = true,
-					}
-
-					settingsList[#settingsList + 1] = {
-						name = (isPercentThresholdMode and (L["Use threshold colors"] or "Use threshold colors"))
-							or (L["Use absolute threshold colors"] or "Use absolute threshold colors"),
-						kind = settingType.Checkbox,
-						field = "useAbsoluteThresholdColors",
-						parentId = "absolutethresholdcolors",
-						default = false,
-						get = isAbsoluteThresholdColorsEnabled,
-						set = function(_, value)
-							local c = curSpecCfg()
-							if not c then return end
-							c.useAbsoluteThresholdColors = value and true or false
-							if c.useAbsoluteThresholdColors then
-								if c.absoluteThresholdColorPointCount == nil then c.absoluteThresholdColorPointCount = ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT end
-								local count = getAbsoluteThresholdPointCount()
-								for i = 1, count do
-									ensureAbsoluteThresholdPoint(i)
-								end
-							end
-							queueRefresh()
-							refreshSettingsUI()
-						end,
-					}
-
-					settingsList[#settingsList + 1] = {
-						name = L["Threshold points"] or "Threshold points",
-						kind = settingType.Dropdown,
-						height = 180,
-						field = "absoluteThresholdColorPointCount",
-						parentId = "absolutethresholdcolors",
-						values = (function()
-							local values = {}
-							for i = 1, ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS do
-								values[#values + 1] = { value = i, label = tostring(i), text = tostring(i) }
-							end
-							return values
-						end)(),
-						get = function() return getAbsoluteThresholdPointCount() end,
-						set = function(_, value)
-							local c = curSpecCfg()
-							if not c then return end
-							local count = tonumber(value) or ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT
-							if count < 1 then count = 1 end
-							if count > ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS then count = ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS end
-							c.absoluteThresholdColorPointCount = math.floor(count + 0.5)
-							for i = 1, c.absoluteThresholdColorPointCount do
+						c.useAbsoluteThresholdColors = value and true or false
+						if c.useAbsoluteThresholdColors then
+							if c.absoluteThresholdColorPointCount == nil then c.absoluteThresholdColorPointCount = ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT end
+							local count = getAbsoluteThresholdPointCount()
+							for i = 1, count do
 								ensureAbsoluteThresholdPoint(i)
 							end
-							queueRefresh()
-							refreshSettingsUI()
+						end
+						queueRefresh()
+						refreshSettingsUI()
+					end,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Threshold points"] or "Threshold points",
+					kind = settingType.Dropdown,
+					height = 180,
+					field = "absoluteThresholdColorPointCount",
+					parentId = "absolutethresholdcolors",
+					values = (function()
+						local values = {}
+						for i = 1, ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS do
+							values[#values + 1] = { value = i, label = tostring(i), text = tostring(i) }
+						end
+						return values
+					end)(),
+					get = function() return getAbsoluteThresholdPointCount() end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						local count = tonumber(value) or ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT
+						if count < 1 then count = 1 end
+						if count > ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS then count = ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS end
+						c.absoluteThresholdColorPointCount = math.floor(count + 0.5)
+						for i = 1, c.absoluteThresholdColorPointCount do
+							ensureAbsoluteThresholdPoint(i)
+						end
+						queueRefresh()
+						refreshSettingsUI()
+					end,
+					default = ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT,
+					isEnabled = isAbsoluteThresholdColorsEnabled,
+				}
+
+				for i = 1, ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS do
+					local defaultValue, defaultColor = getDefaultAbsoluteThresholdPoint(i)
+
+					settingsList[#settingsList + 1] = {
+						name = string.format((isPercentThresholdMode and (L["Threshold point %d value (%%)"] or "Point %d value (%%)")) or (L["Threshold point %d value"] or "Point %d value"), i),
+						kind = settingType.Slider,
+						allowInput = true,
+						field = "absoluteThresholdPointValue" .. i,
+						parentId = "absolutethresholdcolors",
+						minValue = thresholdValueMin,
+						maxValue = thresholdValueCap,
+						valueStep = isPercentThresholdMode and 0.1 or 1,
+						get = function() return getAbsoluteThresholdPointValue(i) end,
+						set = function(_, value) setAbsoluteThresholdPointValue(i, value) end,
+						default = defaultValue,
+						formatter = function(value)
+							local n = tonumber(value) or 0
+							if isPercentThresholdMode then
+								n = math.floor((n * 10) + 0.5) / 10
+								return string.format("%.1f", n)
+							end
+							return tostring(math.floor(n + 0.5))
 						end,
-						default = ABSOLUTE_THRESHOLD_COLOR_DEFAULT_COUNT,
 						isEnabled = isAbsoluteThresholdColorsEnabled,
+						isShown = function() return isAbsoluteThresholdColorsEnabled() and i <= getAbsoluteThresholdPointCount() end,
 					}
 
-					for i = 1, ABSOLUTE_THRESHOLD_COLOR_MAX_POINTS do
-						local defaultValue, defaultColor = getDefaultAbsoluteThresholdPoint(i)
-
-						settingsList[#settingsList + 1] = {
-							name = string.format(
-								(isPercentThresholdMode and (L["Threshold point %d value (%%)"] or "Point %d value (%%)"))
-									or (L["Threshold point %d value"] or "Point %d value"),
-								i
-							),
-							kind = settingType.Slider,
-							allowInput = true,
-							field = "absoluteThresholdPointValue" .. i,
-							parentId = "absolutethresholdcolors",
-							minValue = thresholdValueMin,
-							maxValue = thresholdValueCap,
-							valueStep = isPercentThresholdMode and 0.1 or 1,
-							get = function() return getAbsoluteThresholdPointValue(i) end,
-							set = function(_, value) setAbsoluteThresholdPointValue(i, value) end,
-							default = defaultValue,
-							formatter = function(value)
-								local n = tonumber(value) or 0
-								if isPercentThresholdMode then
-									n = math.floor((n * 10) + 0.5) / 10
-									return string.format("%.1f", n)
-								end
-								return tostring(math.floor(n + 0.5))
-							end,
-							isEnabled = isAbsoluteThresholdColorsEnabled,
-							isShown = function() return isAbsoluteThresholdColorsEnabled() and i <= getAbsoluteThresholdPointCount() end,
-						}
-
-						settingsList[#settingsList + 1] = {
-							name = string.format(L["Threshold point %d color"] or "Point %d color", i),
-							kind = settingType.Color,
-							parentId = "absolutethresholdcolors",
-							default = { r = defaultColor[1] or 1, g = defaultColor[2] or 1, b = defaultColor[3] or 1, a = defaultColor[4] or 1 },
-							get = function() return getAbsoluteThresholdPointUIColor(i) end,
-							set = function(_, value) setAbsoluteThresholdPointColor(i, value) end,
-							colorGet = function() return getAbsoluteThresholdPointUIColor(i) end,
-							colorSet = function(_, value) setAbsoluteThresholdPointColor(i, value) end,
-							hasOpacity = true,
-							isEnabled = isAbsoluteThresholdColorsEnabled,
-							isShown = function() return isAbsoluteThresholdColorsEnabled() and i <= getAbsoluteThresholdPointCount() end,
-						}
-					end
+					settingsList[#settingsList + 1] = {
+						name = string.format(L["Threshold point %d color"] or "Point %d color", i),
+						kind = settingType.Color,
+						parentId = "absolutethresholdcolors",
+						default = { r = defaultColor[1] or 1, g = defaultColor[2] or 1, b = defaultColor[3] or 1, a = defaultColor[4] or 1 },
+						get = function() return getAbsoluteThresholdPointUIColor(i) end,
+						set = function(_, value) setAbsoluteThresholdPointColor(i, value) end,
+						colorGet = function() return getAbsoluteThresholdPointUIColor(i) end,
+						colorSet = function(_, value) setAbsoluteThresholdPointColor(i, value) end,
+						hasOpacity = true,
+						isEnabled = isAbsoluteThresholdColorsEnabled,
+						isShown = function() return isAbsoluteThresholdColorsEnabled() and i <= getAbsoluteThresholdPointCount() end,
+					}
 				end
+			end
 
 			do -- Backdrop
 				local function backdropEnabled()

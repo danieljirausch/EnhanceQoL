@@ -347,6 +347,11 @@ local function hasEnoughMageFood()
 	return false
 end
 
+local function isInFollowerDungeon()
+	if C_LFGInfo and C_LFGInfo.IsInLFGFollowerDungeon then return C_LFGInfo.IsInLFGFollowerDungeon() end
+	return false
+end
+
 local joinSoundPlayed = false
 local leaveSoundPlayed = false
 local function checkShow()
@@ -384,7 +389,10 @@ local function checkShow()
 	end
 
 	local enoughFood = hasEnoughMageFood()
-	if queuedFollower and IsInLFGDungeon() then
+	local inFollowerDungeon = isInFollowerDungeon()
+	if queuedFollower and IsInLFGDungeon() and not inFollowerDungeon then queuedFollower = false end
+
+	if queuedFollower and inFollowerDungeon then
 		if enoughFood then
 			createLeaveFrame()
 			if not leaveSoundPlayed then

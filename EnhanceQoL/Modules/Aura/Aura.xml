@@ -3,6 +3,7 @@
 	<Script file="CooldownPanels_AnchorHelper.lua" />
 	<Script file="CooldownPanels_Stance.lua" />
 	<Script file="CooldownPanels.lua" />
+	<Script file="CooldownPanels_CDMAuras.lua" />
 	<Script file="UF_Helper.lua" />
 	<Script file="UF.lua" />
 	<Script file="UF_StandaloneCastbar.lua" />

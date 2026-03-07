@@ -78,6 +78,7 @@ local COOLDOWN_VIEWER_VISIBILITY_MODES = {
 	PLAYER_HAS_TARGET = "PLAYER_HAS_TARGET",
 	PLAYER_CASTING = "PLAYER_CASTING",
 	PLAYER_IN_GROUP = "PLAYER_IN_GROUP",
+	ALWAYS_HIDDEN = "ALWAYS_HIDDEN",
 }
 addon.constants.COOLDOWN_VIEWER_VISIBILITY_MODES = COOLDOWN_VIEWER_VISIBILITY_MODES
 
@@ -628,6 +629,15 @@ local function IsPlayerMounted()
 	return false
 end
 
+local function IsPlayerMountedOrInVehicleUI()
+	if IsPlayerMounted() then return true end
+	if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
+	if UnitInVehicle and UnitInVehicle("player") then return true end
+	if C_ActionBar and C_ActionBar.HasVehicleActionBar and C_ActionBar.HasVehicleActionBar() then return true end
+	if HasVehicleActionBar and HasVehicleActionBar() then return true end
+	return false
+end
+
 local function UpdateFrameVisibilityContext()
 	local inCombat = false
 	if InCombatLockdown and InCombatLockdown() then
@@ -1121,6 +1131,7 @@ local function normalizeCooldownViewerConfigValue(val, acc)
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP] = true end
+	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN] = true end
 	-- Legacy mapping: "hide while mounted" -> show while not mounted
 	if val == "HIDE_WHILE_MOUNTED" then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED] = true end
 	if val == "HIDE_IN_COMBAT" then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT] = nil end
@@ -1180,7 +1191,7 @@ end
 local function computeCooldownViewerTargetAlpha(cfg, state)
 	if not cfg or not next(cfg) then return 1 end
 
-	local mounted = (IsMounted and IsMounted()) or IsInDruidTravelForm()
+	local mounted = IsPlayerMountedOrInVehicleUI()
 	local inCombat = (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player"))
 
 	local hovered = state and state.hovered
@@ -1200,6 +1211,7 @@ local function computeCooldownViewerTargetAlpha(cfg, state)
 	local inGroup = IsInGroup and IsInGroup() and true or false
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding
 	local fadedAlpha = (addon.functions and addon.functions.GetCooldownViewerFadedAlpha and addon.functions.GetCooldownViewerFadedAlpha()) or 0
+	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN] then return 0 end
 	local hideSkyriding = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] == true
 	local hasShowRules = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_MOUNTED]
@@ -1452,6 +1464,18 @@ local COOLDOWN_VIEWER_EVENTS = {
 	"UPDATE_SHAPESHIFT_FORM",
 	"PLAYER_TARGET_CHANGED",
 	"GROUP_ROSTER_UPDATE",
+	"UPDATE_BONUS_ACTIONBAR",
+	"UPDATE_VEHICLE_ACTIONBAR",
+	"UPDATE_OVERRIDE_ACTIONBAR",
+	"UPDATE_POSSESS_BAR",
+	"VEHICLE_UPDATE",
+}
+
+local COOLDOWN_VIEWER_UNIT_EVENTS = {
+	"UNIT_ENTERING_VEHICLE",
+	"UNIT_ENTERED_VEHICLE",
+	"UNIT_EXITING_VEHICLE",
+	"UNIT_EXITED_VEHICLE",
 }
 
 local function setCooldownViewerWatcherEnabled(watcher, enabled)
@@ -1460,6 +1484,9 @@ local function setCooldownViewerWatcherEnabled(watcher, enabled)
 		if watcher._eqolEventsRegistered then return end
 		for _, event in ipairs(COOLDOWN_VIEWER_EVENTS) do
 			watcher:RegisterEvent(event)
+		end
+		for _, event in ipairs(COOLDOWN_VIEWER_UNIT_EVENTS) do
+			SafeRegisterUnitEvent(watcher, event, "player")
 		end
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_START", "player")
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_STOP", "player")
@@ -1580,7 +1607,7 @@ local function getSpellActivationOverlayAlphaValue(key, fallback)
 end
 
 local function computeSpellActivationOverlayTargetAlpha(cfg, activeAlpha, hiddenAlpha)
-	local mounted = IsPlayerMounted()
+	local mounted = IsPlayerMountedOrInVehicleUI()
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding and true or false
 	local hasTarget = UnitExists and UnitExists("target") and true or false
 	local isCasting = IsPlayerCasting()
@@ -1678,6 +1705,15 @@ EnsureSpellActivationOverlayWatcher = function()
 	watcher:RegisterEvent("PLAYER_TARGET_CHANGED")
 	watcher:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 	watcher:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+	watcher:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_POSSESS_BAR")
+	watcher:RegisterEvent("VEHICLE_UPDATE")
+	SafeRegisterUnitEvent(watcher, "UNIT_ENTERING_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_ENTERED_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_EXITING_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_EXITED_VEHICLE", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_START", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_STOP", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_FAILED", "player")
@@ -3841,6 +3877,11 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesHideInInstance", true)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesUpdateInterval", 0.2)
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButton", false)
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonAnchor", "TOPLEFT")
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonOffsetX", 3)
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonOffsetY", -3)
+	addon.functions.InitDBValue("squareMinimapStatsTrackingButtonScale", 1.0)
 	addon.functions.InitDBValue("minimapButtonsMouseover", false)
 	addon.functions.InitDBValue("unclampMinimapCluster", false)
 	addon.functions.InitDBValue("unclampDamageMeter", false)
@@ -4305,26 +4346,47 @@ local function initUI()
 	function addon.functions.ApplyMinimapElementVisibility()
 		local cfg = addon.db and addon.db.hiddenMinimapElements or {}
 		local elems = getMinimapElementFrames()
+		local trackingDisabled = C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled)
+		local customTrackingButtonEnabled = addon.db
+			and addon.db.enableSquareMinimap
+			and addon.db.enableSquareMinimapStats
+			and addon.db.squareMinimapStatsTrackingButton == true
+			and not trackingDisabled
 		for key, frames in pairs(elems) do
 			local shouldHide = cfg and cfg[key]
+			if key == "Tracking" then shouldHide = customTrackingButtonEnabled end
 			for _, f in ipairs(frames) do
 				if shouldHide then
 					f:Hide()
 					f._eqolMinimapHidden = true
 				elseif f._eqolMinimapHidden then
 					f._eqolMinimapHidden = nil
-					f:Show()
+					if key ~= "Tracking" or not trackingDisabled then f:Show() end
 				end
 				if not f._eqolMinimapHideHooked then
 					f._eqolMinimapHideHooked = true
 					local hookKey = key
 					f:HookScript("OnShow", function(self)
 						local c = addon.db and addon.db.hiddenMinimapElements
-						if c and c[hookKey] then self:Hide() end
+						local hideForConfig = hookKey ~= "Tracking" and c and c[hookKey]
+						local hideForCustomTracking = hookKey == "Tracking"
+							and addon.db
+							and addon.db.enableSquareMinimap
+							and addon.db.enableSquareMinimapStats
+							and addon.db.squareMinimapStatsTrackingButton == true
+							and not (
+								C_GameRules
+								and C_GameRules.IsGameRuleActive
+								and Enum
+								and Enum.GameRule
+								and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled)
+							)
+						if hideForConfig or hideForCustomTracking then self:Hide() end
 					end)
 				end
 			end
 		end
+		if addon.functions.applySquareMinimapTrackingButton then addon.functions.applySquareMinimapTrackingButton() end
 	end
 
 	-- Apply on load with a tiny delay to ensure frames exist
@@ -5576,8 +5638,10 @@ local function setAllHooks()
 			if ActionBarLabels and ActionBarLabels.ResetBorderCache then ActionBarLabels.ResetBorderCache() end
 			refreshExperienceBarForMedia(mediaType, mediaKey)
 			refreshGCDBarForMedia(mediaType, mediaKey)
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia(mediaType, mediaKey) end
 		elseif mediaType == "font" then
 			refreshExperienceBarForMedia(mediaType, mediaKey)
+			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia(mediaType, mediaKey) end
 			queueGlobalFontRefresh()
 		end
 	end)

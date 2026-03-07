@@ -1434,6 +1434,7 @@ end
 
 function AuraUtil.getAuraFilters(unit)
 	if unit == UNIT.PLAYER or unit == "player" then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
+	if UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
 	return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL
 end
 
@@ -2556,8 +2557,12 @@ function AuraUtil.cacheTargetAura(aura, unit)
 	t.duration = aura.duration
 	t.expirationTime = aura.expirationTime
 	t.sourceUnit = aura.sourceUnit
-	t.dispelName = aura.dispelName
-	t.canActivePlayerDispel = aura.canActivePlayerDispel
+	local dispelName = aura.dispelName
+	local canActivePlayerDispel = aura.canActivePlayerDispel
+	if issecretvalue and issecretvalue(dispelName) then dispelName = nil end
+	if issecretvalue and issecretvalue(canActivePlayerDispel) then canActivePlayerDispel = nil end
+	t.dispelName = dispelName
+	t.canActivePlayerDispel = canActivePlayerDispel
 end
 
 function AuraUtil.cacheAura(cache, aura)
@@ -2580,8 +2585,12 @@ function AuraUtil.cacheAura(cache, aura)
 	t.duration = aura.duration
 	t.expirationTime = aura.expirationTime
 	t.sourceUnit = aura.sourceUnit
-	t.dispelName = aura.dispelName
-	t.canActivePlayerDispel = aura.canActivePlayerDispel
+	local dispelName = aura.dispelName
+	local canActivePlayerDispel = aura.canActivePlayerDispel
+	if issecretvalue and issecretvalue(dispelName) then dispelName = nil end
+	if issecretvalue and issecretvalue(canActivePlayerDispel) then canActivePlayerDispel = nil end
+	t.dispelName = dispelName
+	t.canActivePlayerDispel = canActivePlayerDispel
 end
 
 function AuraUtil.addTargetAuraToOrder(auraInstanceID, unit)
@@ -3063,6 +3072,7 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken)
 				if UFHelper and UFHelper.getDebuffColorFromName then
 					local dispelName = aura.dispelName
 					local canActivePlayerDispel = aura.canActivePlayerDispel
+					if issecretvalue and issecretvalue(dispelName) then dispelName = nil end
 					if issecretvalue and issecretvalue(canActivePlayerDispel) then canActivePlayerDispel = nil end
 					if (not dispelName or dispelName == "") and canActivePlayerDispel == true then dispelName = "Magic" end
 					fr, fg, fb = UFHelper.getDebuffColorFromName(dispelName or "None")
@@ -3163,7 +3173,10 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken)
 			end
 			local alphaOn = (ac and ac.blizzardDispelBorderAlpha) or 1
 			local alphaOff = (ac and ac.blizzardDispelBorderAlphaNot) or 0
-			btn.dispelIcon:SetAlphaFromBoolean(aura.canActivePlayerDispel, alphaOn, alphaOff)
+			local canActivePlayerDispel = aura.canActivePlayerDispel
+			if issecretvalue and issecretvalue(canActivePlayerDispel) then canActivePlayerDispel = nil end
+			if canActivePlayerDispel == nil then canActivePlayerDispel = false end
+			btn.dispelIcon:SetAlphaFromBoolean(canActivePlayerDispel, alphaOn, alphaOff)
 			btn.dispelIcon:Show()
 		else
 			btn.dispelIcon:Hide()

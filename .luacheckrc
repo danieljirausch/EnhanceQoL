@@ -375,6 +375,7 @@ globals = {
 	"DRUID_ACQUATIC_FORM",
 	"DRUID_FLIGHT_FORM",
 	"Round",
+	"C_GameRules",
 	"SafePack",
 	"HUD_EDIT_MODE_COOLDOWN_VIEWER_OPTIONS",
 	"SafeUnpack",

@@ -78,6 +78,7 @@ Helper.DirectionOptions = {
 }
 Helper.LayoutModeOptions = {
 	{ value = "GRID", label = L["CooldownPanelLayoutModeGrid"] or "Grid" },
+	{ value = "FIXED", label = L["CooldownPanelLayoutModeFixed"] or "Fixed slots" },
 	{ value = "RADIAL", label = L["CooldownPanelLayoutModeRadial"] or "Radial" },
 }
 Helper.AnchorOptions = {
@@ -107,6 +108,9 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	iconSize = 36,
 	spacing = 2,
 	layoutMode = "GRID",
+	fixedSlotCount = 0,
+	fixedGridColumns = 0,
+	fixedGridRows = 0,
 	direction = "RIGHT",
 	wrapCount = 0,
 	wrapDirection = "DOWN",
@@ -189,7 +193,7 @@ Helper.ENTRY_DEFAULTS = {
 }
 
 Helper.DEFAULT_PREVIEW_COUNT = 6
-Helper.MAX_PREVIEW_COUNT = 12
+Helper.MAX_PREVIEW_COUNT = 200
 Helper.PREVIEW_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 Helper.PREVIEW_ICON_SIZE = 36
 Helper.PREVIEW_COUNT_FONT_MIN = 12
@@ -205,6 +209,7 @@ Helper.VALID_DIRECTIONS = {
 }
 Helper.VALID_LAYOUT_MODES = {
 	GRID = true,
+	FIXED = true,
 	RADIAL = true,
 }
 local STRATA_ORDER = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP" }
@@ -321,6 +326,172 @@ function Helper.NormalizeLayoutMode(value, fallback)
 		if Helper.VALID_LAYOUT_MODES[upper] then return upper end
 	end
 	return "GRID"
+end
+
+function Helper.IsFixedLayout(layout) return Helper.NormalizeLayoutMode(layout and layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode) == "FIXED" end
+
+function Helper.NormalizeSlotIndex(value, fallback)
+	local num = Helper.ClampInt(value, 1, 200, fallback)
+	if num == nil or num < 1 then return nil end
+	return num
+end
+
+function Helper.NormalizeFixedSlotCount(value, fallback)
+	local num = Helper.ClampInt(value, 0, 200, fallback)
+	if num == nil or num < 0 then return 0 end
+	return num
+end
+
+function Helper.NormalizeSlotCoordinate(value, fallback)
+	local num = Helper.ClampInt(value, 1, 200, fallback)
+	if num == nil or num < 1 then return nil end
+	return num
+end
+
+function Helper.NormalizeFixedGridSize(value, fallback)
+	local num = Helper.ClampInt(value, 0, 40, fallback)
+	if num == nil or num < 0 then return 0 end
+	return num
+end
+
+local function getFixedGridDefaultColumns(panel)
+	if type(panel) ~= "table" then return 4 end
+	local layout = type(panel.layout) == "table" and panel.layout or nil
+	local configured = Helper.NormalizeFixedGridSize(layout and layout.fixedGridColumns, 0)
+	if configured > 0 then return configured end
+	local wrapCount = Helper.ClampInt(layout and layout.wrapCount, 0, 40, Helper.PANEL_LAYOUT_DEFAULTS.wrapCount or 0)
+	if wrapCount and wrapCount > 0 then return wrapCount end
+	local entryCount = type(panel.order) == "table" and #panel.order or 0
+	if entryCount <= 0 then return 4 end
+	if entryCount <= 4 then return entryCount end
+	return math.min(math.max(math.ceil(math.sqrt(entryCount)), 4), 12)
+end
+
+function Helper.EnsureFixedSlotAssignments(panel)
+	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return 0, 0 end
+	panel.layout = type(panel.layout) == "table" and panel.layout or {}
+	local layout = panel.layout
+	local used = {}
+	local columns = getFixedGridDefaultColumns(panel)
+	local nextIndex = 1
+	local maxColumn = 0
+	local maxRow = 0
+
+	local function makeKey(column, row) return tostring(column) .. ":" .. tostring(row) end
+	local function claimNextFreeCell()
+		while true do
+			local column = ((nextIndex - 1) % columns) + 1
+			local row = math.floor((nextIndex - 1) / columns) + 1
+			nextIndex = nextIndex + 1
+			local key = makeKey(column, row)
+			if not used[key] then return column, row end
+		end
+	end
+
+	for _, entryId in ipairs(panel.order) do
+		local entry = panel.entries[entryId]
+		if entry then
+			local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+			local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+			local key = (column and row) and makeKey(column, row) or nil
+			if key and used[key] then
+				column = nil
+				row = nil
+				key = nil
+			end
+			if not (column and row) then
+				local slot = Helper.NormalizeSlotIndex(entry.slotIndex)
+				if slot then
+					local derivedColumn = ((slot - 1) % columns) + 1
+					local derivedRow = math.floor((slot - 1) / columns) + 1
+					local derivedKey = makeKey(derivedColumn, derivedRow)
+					if not used[derivedKey] then
+						column = derivedColumn
+						row = derivedRow
+						key = derivedKey
+					end
+				end
+			end
+			if not (column and row) then
+				column, row = claimNextFreeCell()
+				key = makeKey(column, row)
+			end
+			used[key] = true
+			entry.slotColumn = column
+			entry.slotRow = row
+			entry.slotIndex = ((row - 1) * columns) + column
+			if entry.slotColumn > maxColumn then maxColumn = entry.slotColumn end
+			if entry.slotRow > maxRow then maxRow = entry.slotRow end
+			if entry.slotIndex >= nextIndex then nextIndex = entry.slotIndex + 1 end
+		end
+	end
+
+	local configuredColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
+	local configuredRows = Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0)
+	layout.fixedGridColumns = math.max(configuredColumns, maxColumn, columns)
+	layout.fixedGridRows = math.max(configuredRows, maxRow)
+	return maxColumn, maxRow
+end
+
+function Helper.GetAssignedFixedSlotCount(panel)
+	if type(panel) ~= "table" then return 0 end
+	local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
+	local columns = Helper.NormalizeFixedGridSize(panel.layout and panel.layout.fixedGridColumns, 0)
+	if columns <= 0 then columns = math.max(maxColumn, 1) end
+	if maxRow <= 0 then return 0 end
+	return maxRow * columns
+end
+
+function Helper.GetFixedGridBounds(panel, includePreviewPadding)
+	if type(panel) ~= "table" then return 0, 0 end
+	local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
+	local layout = type(panel.layout) == "table" and panel.layout or nil
+	local columns = math.max(Helper.NormalizeFixedGridSize(layout and layout.fixedGridColumns, 0), maxColumn)
+	local rows = math.max(Helper.NormalizeFixedGridSize(layout and layout.fixedGridRows, 0), maxRow)
+	if columns <= 0 and rows <= 0 then return 0, 0 end
+	if columns <= 0 then columns = 1 end
+	if rows <= 0 then rows = 1 end
+	if includePreviewPadding then
+		local paddedColumns = columns + 1
+		local paddedRows = rows + 1
+		if paddedColumns * paddedRows <= (Helper.MAX_PREVIEW_COUNT or 200) then
+			columns = paddedColumns
+			rows = paddedRows
+		elseif columns * paddedRows <= (Helper.MAX_PREVIEW_COUNT or 200) then
+			rows = paddedRows
+		elseif paddedColumns * rows <= (Helper.MAX_PREVIEW_COUNT or 200) then
+			columns = paddedColumns
+		end
+	end
+	return columns, rows
+end
+
+function Helper.GetFixedSlotCount(panel, includeDefaultPreview)
+	if type(panel) ~= "table" then
+		if includeDefaultPreview then return Helper.DEFAULT_PREVIEW_COUNT end
+		return 0
+	end
+	local columns, rows = Helper.GetFixedGridBounds(panel, false)
+	local count = columns * rows
+	if count <= 0 and includeDefaultPreview then return Helper.DEFAULT_PREVIEW_COUNT end
+	return count
+end
+
+function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
+	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return nil, 0, 0, 0 end
+	local columns, rows = Helper.GetFixedGridBounds(panel, includePreviewPadding == true)
+	local count = columns * rows
+	local slotEntryIds = {}
+	if count <= 0 then return slotEntryIds, 0, columns, rows end
+	for _, entryId in ipairs(panel.order) do
+		local entry = panel.entries[entryId]
+		if entry and (type(filterFn) ~= "function" or filterFn(entry, entryId) ~= false) then
+			local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+			local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+			if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = entryId end
+		end
+	end
+	return slotEntryIds, count, columns, rows
 end
 
 function Helper.NormalizeStrata(strata, fallback)
@@ -742,6 +913,9 @@ function Helper.NormalizePanel(panel, defaults)
 	for key, value in pairs(layoutDefaults) do
 		if panel.layout[key] == nil then panel.layout[key] = value end
 	end
+	panel.layout.fixedSlotCount = Helper.NormalizeFixedSlotCount(panel.layout.fixedSlotCount, layoutDefaults.fixedSlotCount or Helper.PANEL_LAYOUT_DEFAULTS.fixedSlotCount or 0)
+	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
+	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
 	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
@@ -762,6 +936,7 @@ function Helper.NormalizePanel(panel, defaults)
 	if type(panel.order) ~= "table" then panel.order = {} end
 	if panel.enabled == nil then panel.enabled = true end
 	if type(panel.name) ~= "string" or panel.name == "" then panel.name = "Cooldown Panel" end
+	if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
 	if hadKeybindsEnabled == nil or hadChargesCooldown == nil then
 		for _, entry in pairs(panel.entries) do
 			if entry then
@@ -791,6 +966,9 @@ function Helper.NormalizeEntry(entry, defaults)
 	if entry.type == "SPELL" then
 		if not hadShowCharges then entry.showCharges = spellHasCharges(entry.spellID) end
 		if not hadShowStacks then entry.showStacks = false end
+	elseif entry.type == "CDM_AURA" then
+		local cdmAuras = CooldownPanels and CooldownPanels.CDMAuras
+		if cdmAuras and cdmAuras.NormalizeEntry then cdmAuras:NormalizeEntry(entry, defaults) end
 	elseif entry.type == "MACRO" then
 		entry.macroID = tonumber(entry.macroID)
 		if type(entry.macroName) == "string" and strtrim then entry.macroName = strtrim(entry.macroName) end
@@ -815,6 +993,9 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.staticTextAnchor = Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
 	entry.staticTextX = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0)
 	entry.staticTextY = Helper.ClampInt(entry.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextY or 0)
+	entry.slotIndex = Helper.NormalizeSlotIndex(entry.slotIndex)
+	entry.slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+	entry.slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
 end
 
 function Helper.SyncOrder(order, map)
@@ -872,6 +1053,17 @@ function Helper.CreateEntry(entryType, idValue, defaults)
 		entry.spellID = tonumber(idValue)
 		entry.showCharges = spellHasCharges(entry.spellID)
 		entry.showStacks = false
+	elseif entryType == "CDM_AURA" then
+		local cdmAuras = CooldownPanels and CooldownPanels.CDMAuras
+		if cdmAuras and cdmAuras.CreateEntryData then
+			local created = cdmAuras:CreateEntryData(idValue, nil, defaults)
+			if type(created) == "table" then
+				for key, value in pairs(created) do
+					entry[key] = value
+				end
+				entry.type = "CDM_AURA"
+			end
+		end
 	elseif entryType == "ITEM" then
 		entry.itemID = tonumber(idValue)
 		if entry.showItemCount == nil then entry.showItemCount = true end
