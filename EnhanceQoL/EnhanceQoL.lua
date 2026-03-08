@@ -3868,6 +3868,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapStatsLocationFontSize", 12)
 	addon.functions.InitDBValue("squareMinimapStatsLocationColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("squareMinimapStatsLocationShowSubzone", false)
+	addon.functions.InitDBValue("squareMinimapStatsLocationSubzoneBelowZone", false)
 	addon.functions.InitDBValue("squareMinimapStatsLocationUseZoneColor", true)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinates", true)
 	addon.functions.InitDBValue("squareMinimapStatsCoordinatesAnchor", "TOP")
@@ -4374,13 +4375,7 @@ local function initUI()
 							and addon.db.enableSquareMinimap
 							and addon.db.enableSquareMinimapStats
 							and addon.db.squareMinimapStatsTrackingButton == true
-							and not (
-								C_GameRules
-								and C_GameRules.IsGameRuleActive
-								and Enum
-								and Enum.GameRule
-								and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled)
-							)
+							and not (C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled))
 						if hideForConfig or hideForCustomTracking then self:Hide() end
 					end)
 				end

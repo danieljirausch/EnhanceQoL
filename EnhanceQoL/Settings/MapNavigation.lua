@@ -958,6 +958,25 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsLocationSubzoneBelowZone",
+						text = L["squareMinimapStatsLocationSubzoneBelowZone"] or "Show subzone below zone",
+						func = function(value)
+							addon.db["squareMinimapStatsLocationSubzoneBelowZone"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = function()
+							return isSquareMinimapStatElementEnabled("squareMinimapStatsLocation")
+								and addon.db
+								and addon.db.squareMinimapStatsLocationShowZone ~= false
+								and addon.db.squareMinimapStatsLocationShowSubzone == true
+						end,
+						notify = "squareMinimapStatsLocation",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsLocationUseZoneColor",
 						text = L["squareMinimapStatsLocationUseZoneColor"] or "Use zone color",
 						func = function(value)
@@ -2281,6 +2300,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsLocationColor = { r = 1, g = 1, b = 1, a = 1 },
 	squareMinimapStatsLocationShowZone = true,
 	squareMinimapStatsLocationShowSubzone = false,
+	squareMinimapStatsLocationSubzoneBelowZone = false,
 	squareMinimapStatsLocationUseZoneColor = true,
 	squareMinimapStatsCoordinates = true,
 	squareMinimapStatsCoordinatesAnchor = "TOP",
@@ -2780,30 +2800,15 @@ local function getSquareMinimapTimeText()
 	return serverText
 end
 
+local getSquareMinimapLocationLines
+
 local function getSquareMinimapLocationText()
-	local zone = GetZoneText and GetZoneText() or nil
-	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
-	local subzone = GetSubZoneText and GetSubZoneText() or ""
 	local showZone = addon.db.squareMinimapStatsLocationShowZone ~= false
 	local showSubzone = addon.db.squareMinimapStatsLocationShowSubzone ~= false
-	if not showZone and not showSubzone then return "" end
-	if showZone and showSubzone then
-		if subzone ~= "" and subzone ~= zone then
-			if zone and zone ~= "" then return zone .. " - " .. subzone end
-			return subzone
-		end
-		if zone and zone ~= "" then return zone end
-		return subzone
-	end
-	if showZone then
-		if zone and zone ~= "" then return zone end
-		return subzone
-	end
-	if showSubzone then
-		if subzone ~= "" then return subzone end
-		if zone and zone ~= "" then return zone end
-	end
-	return ""
+	local splitLines = addon.db.squareMinimapStatsLocationSubzoneBelowZone == true
+	local primaryText, secondaryText = getSquareMinimapLocationLines(showZone, showSubzone, splitLines)
+	if secondaryText ~= "" then return ("%s\n%s"):format(primaryText, secondaryText) end
+	return primaryText
 end
 
 local function getSquareMinimapCoordinatesText(frame, renderCfg)
@@ -2938,45 +2943,39 @@ local function buildSquareMinimapTimeText(frame, renderCfg)
 	return text
 end
 
-local function buildSquareMinimapLocationText(frame, renderCfg)
+getSquareMinimapLocationLines = function(showZone, showSubzone, splitLines)
 	local zone = GetZoneText and GetZoneText() or nil
 	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
 	local subzone = GetSubZoneText and GetSubZoneText() or ""
+	if not showZone and not showSubzone then return "", "" end
+
+	if showZone and showSubzone then
+		if subzone ~= "" and subzone ~= zone then
+			if zone and zone ~= "" then
+				if splitLines then return zone, subzone end
+				return zone .. " - " .. subzone, ""
+			end
+			return subzone, ""
+		end
+		if zone and zone ~= "" then return zone, "" end
+		return subzone, ""
+	end
+
+	if showZone then
+		if zone and zone ~= "" then return zone, "" end
+		return subzone, ""
+	end
+
+	if subzone ~= "" then return subzone, "" end
+	if zone and zone ~= "" then return zone, "" end
+	return "", ""
+end
+
+local function buildSquareMinimapLocationTexts(renderCfg)
 	local showZone = renderCfg and renderCfg.locationShowZone ~= false
 	local showSubzone = renderCfg and renderCfg.locationShowSubzone ~= false
-
-	if frame and frame._eqolLocationZone == zone and frame._eqolLocationSubzone == subzone and frame._eqolLocationShowZone == showZone and frame._eqolLocationShowSubzone == showSubzone then
-		return frame._eqolPrimaryText or ""
-	end
-
-	local text = ""
-	if showZone or showSubzone then
-		if showZone and showSubzone then
-			if subzone ~= "" and subzone ~= zone then
-				if zone and zone ~= "" then
-					text = zone .. " - " .. subzone
-				else
-					text = subzone
-				end
-			elseif zone and zone ~= "" then
-				text = zone
-			else
-				text = subzone
-			end
-		elseif showZone then
-			text = (zone and zone ~= "") and zone or subzone
-		elseif showSubzone then
-			text = (subzone ~= "" and subzone) or zone or ""
-		end
-	end
-
-	if frame then
-		frame._eqolLocationZone = zone
-		frame._eqolLocationSubzone = subzone
-		frame._eqolLocationShowZone = showZone
-		frame._eqolLocationShowSubzone = showSubzone
-	end
-	return text
+	local splitLines = renderCfg and renderCfg.locationSubzoneBelowZone == true
+	return getSquareMinimapLocationLines(showZone, showSubzone, splitLines)
 end
 
 local function getSquareMinimapFPSBucket(renderCfg, value)
@@ -3122,6 +3121,7 @@ local function getSquareMinimapStatRenderConfig(statKey)
 		useZoneColor = statKey == "location" and addon.db.squareMinimapStatsLocationUseZoneColor == true or false,
 		locationShowZone = statKey == "location" and addon.db.squareMinimapStatsLocationShowZone ~= false or nil,
 		locationShowSubzone = statKey == "location" and addon.db.squareMinimapStatsLocationShowSubzone ~= false or nil,
+		locationSubzoneBelowZone = statKey == "location" and addon.db.squareMinimapStatsLocationSubzoneBelowZone == true or false,
 		decimals = statKey == "coordinates" and math.floor(clamp(tonumber(addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5) or nil,
 		hideInInstance = statKey == "coordinates" and addon.db.squareMinimapStatsCoordinatesHideInInstance == true or false,
 	}
@@ -3257,15 +3257,44 @@ local function updateSquareMinimapStat(statKey)
 		elseif statKey == "latency" then
 			primaryText = buildSquareMinimapLatencyTexts(frame, renderCfg) or ""
 		elseif statKey == "location" then
-			primaryText = buildSquareMinimapLocationText(frame, renderCfg) or ""
+			local topText, bottomText = buildSquareMinimapLocationTexts(renderCfg)
+			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
+			if maxWidth and maxWidth > 0 then
+				topText = truncateSquareMinimapTextToWidth(frame.text, topText, maxWidth)
+				if bottomText ~= "" then bottomText = truncateSquareMinimapTextToWidth(frame.textSecondary, bottomText, maxWidth) end
+			end
+
+			if bottomText ~= "" then
+				local stackUpwards = point and point:find("BOTTOM", 1, true) ~= nil
+				local secondaryY
+				if stackUpwards then
+					primaryText = bottomText or ""
+					secondaryText = topText or ""
+					secondaryY = size + lineGap
+				else
+					primaryText = topText or ""
+					secondaryText = bottomText or ""
+					secondaryY = -(size + lineGap)
+				end
+				if frame._eqolSecondaryPoint ~= point or frame._eqolSecondaryOffsetY ~= secondaryY then
+					frame.textSecondary:ClearAllPoints()
+					frame.textSecondary:SetPoint(point, frame, point, 0, secondaryY)
+					frame._eqolSecondaryPoint = point
+					frame._eqolSecondaryOffsetY = secondaryY
+				end
+				showSecondary = secondaryText ~= ""
+				if primaryText == "" and secondaryText ~= "" then
+					primaryText = secondaryText
+					secondaryText = ""
+					showSecondary = false
+				end
+			else
+				primaryText = topText or ""
+			end
 		elseif statKey == "coordinates" then
 			primaryText = getSquareMinimapCoordinatesText(frame, renderCfg) or ""
 		else
 			primaryText = getSquareMinimapStatText(statKey) or ""
-		end
-		if statKey == "location" then
-			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
-			if maxWidth and maxWidth > 0 then primaryText = truncateSquareMinimapTextToWidth(frame.text, primaryText, maxWidth) end
 		end
 	end
 
