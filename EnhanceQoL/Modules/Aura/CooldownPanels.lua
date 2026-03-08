@@ -2801,19 +2801,17 @@ local function createIconFrame(parent)
 	icon.msqNormal:SetTexture("Interface\\Buttons\\UI-Quickslot2")
 	icon.msqNormal:Hide()
 
-	if parent and parent._eqolIsPreview then
-		icon.previewGlowBorder = CreateFrame("Frame", nil, icon, "BackdropTemplate")
-		icon.previewGlowBorder:SetFrameStrata(icon.cooldown:GetFrameStrata() or icon:GetFrameStrata())
-		icon.previewGlowBorder:SetFrameLevel((icon.cooldown:GetFrameLevel() or icon:GetFrameLevel()) + 2)
-		icon.previewGlowBorder:EnableMouse(false)
-		icon.previewGlowBorder:SetBackdrop({
-			edgeFile = "Interface\\Buttons\\WHITE8x8",
-			edgeSize = 2,
-			insets = { left = 0, right = 0, top = 0, bottom = 0 },
-		})
-		icon.previewGlowBorder:SetBackdropColor(0, 0, 0, 0)
-		icon.previewGlowBorder:Hide()
-	end
+	icon.previewGlowBorder = CreateFrame("Frame", nil, icon, "BackdropTemplate")
+	icon.previewGlowBorder:SetFrameStrata(icon.cooldown:GetFrameStrata() or icon:GetFrameStrata())
+	icon.previewGlowBorder:SetFrameLevel((icon.cooldown:GetFrameLevel() or icon:GetFrameLevel()) + 2)
+	icon.previewGlowBorder:EnableMouse(false)
+	icon.previewGlowBorder:SetBackdrop({
+		edgeFile = "Interface\\Buttons\\WHITE8x8",
+		edgeSize = 2,
+		insets = { left = 0, right = 0, top = 0, bottom = 0 },
+	})
+	icon.previewGlowBorder:SetBackdropColor(0, 0, 0, 0)
+	icon.previewGlowBorder:Hide()
 
 	icon.previewBling = icon:CreateTexture(nil, "OVERLAY")
 	icon.previewBling:SetTexture("Interface\\Cooldown\\star4")
@@ -9043,6 +9041,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 
 			local overlayGlow = data.overlayGlow == true
 			local overlayGlowColor = overlayGlow and data.overlayGlowColor or nil
+			local simpleGlowEnabled = overlayGlow
+			local simpleGlowColor = overlayGlowColor
 			if data.glowReady then
 				local ready = false
 				local duration = tonumber(data.glowDuration) or 0
@@ -9055,9 +9055,19 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					end
 				end
 
-				setGlow(icon, overlayGlow or ready, ready and data.readyGlowColor or overlayGlowColor)
+				simpleGlowEnabled = overlayGlow or ready
+				simpleGlowColor = ready and data.readyGlowColor or overlayGlowColor
+			end
+			if layoutEditActive then
+				setGlow(icon, false)
+				if simpleGlowEnabled then
+					CooldownPanels.ShowPreviewGlowBorder(icon, simpleGlowColor)
+				else
+					CooldownPanels.HidePreviewGlowBorder(icon)
+				end
 			else
-				setGlow(icon, overlayGlow, overlayGlowColor)
+				CooldownPanels.HidePreviewGlowBorder(icon)
+				setGlow(icon, simpleGlowEnabled, simpleGlowColor)
 			end
 		end
 	end
