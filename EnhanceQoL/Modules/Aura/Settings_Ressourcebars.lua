@@ -508,6 +508,11 @@ local function registerEditModeBars()
 				ResourceBars.SetPowerBarSize(c.width or widthDefault, c.height or heightDefault, barType)
 			end
 		end
+		local function syncEditModeSizeValues(width, height)
+			if not (EditMode and EditMode.SetValue and frameId) then return end
+			EditMode:SetValue(frameId, "width", width, nil, true)
+			EditMode:SetValue(frameId, "height", height, nil, true)
+		end
 		local function ensureBackdropTable(target)
 			if not target then return nil end
 			target.backdrop = target.backdrop or {}
@@ -1230,6 +1235,9 @@ local function registerEditModeBars()
 							cfg.verticalFill = nil
 							cfg.smoothFill = nil
 						end
+					end
+					if swapped then
+						syncEditModeSizeValues(cfg.width or widthDefault or 200, cfg.height or heightDefault or 20)
 					end
 					queueRefresh()
 					if swapped then refreshSettingsUI() end

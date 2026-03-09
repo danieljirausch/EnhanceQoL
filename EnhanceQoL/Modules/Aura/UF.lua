@@ -4546,12 +4546,7 @@ local function configureCastStatic(unit, ccfg, defc)
 	local useClassColor = ccfg.useClassColor
 	if useClassColor == nil then useClassColor = defc.useClassColor end
 	if useClassColor == true then
-		local class
-		if UnitIsPlayer and UnitIsPlayer(unit) then
-			class = select(2, UnitClass(unit))
-		elseif unit == UNIT.PET then
-			class = select(2, UnitClass(UNIT.PLAYER))
-		end
+		local class = (addon.variables and addon.variables.unitClass) or select(2, UnitClass(UNIT.PLAYER))
 		local cr, cg, cb, ca = getClassColor(class)
 		if cr then clr = { cr, cg, cb, ca or 1 } end
 	end
@@ -5034,13 +5029,20 @@ local function setCastInfoFromUnit(unit)
 				end
 			end
 			local clr = ccfg.color or defc.color or { 0.9, 0.7, 0.2, 1 }
+			local useClassColor = ccfg.useClassColor
+			if useClassColor == nil then useClassColor = defc.useClassColor end
+			if useClassColor == true then
+				local class = (addon.variables and addon.variables.unitClass) or select(2, UnitClass(UNIT.PLAYER))
+				local cr, cg, cb, ca = getClassColor(class)
+				if cr then clr = { cr, cg, cb, ca or 1 } end
+			end
 			local nclr = ccfg.notInterruptibleColor or defc.notInterruptibleColor or { 204 / 255, 204 / 255, 204 / 255, 1 }
 			st.castBar:GetStatusBarTexture():SetVertexColorFromBoolean(
 				notInterruptible,
 				CreateColor(nclr[1] or 0.9, nclr[2] or 0.7, nclr[3] or 0.2, nclr[4] or 1),
 				CreateColor(clr[1] or 0.9, clr[2] or 0.7, clr[3] or 0.2, clr[4] or 1)
 			)
-			st.castBar:SetStatusBarDesaturated(true)
+			st.castBar:SetStatusBarDesaturated(false)
 			local showDuration = ccfg.showDuration ~= false and st.castDuration ~= nil
 			local needsOnUpdate = showDuration
 			if not needsOnUpdate then
@@ -5172,7 +5174,7 @@ function UF.resolveHealthBaseColor(unit, hc, defH)
 		if isPlayerUnit then
 			class = select(2, UnitClass(unit))
 		elseif unit == UNIT.PET then
-			class = select(2, UnitClass(UNIT.PLAYER))
+			class = (addon.variables and addon.variables.unitClass) or select(2, UnitClass(UNIT.PLAYER))
 		end
 		local cr, cg, cb, ca = getClassColor(class)
 		if cr then
@@ -6843,7 +6845,7 @@ local function applyBars(cfg, unit)
 			if UnitIsPlayer and UnitIsPlayer(unit) then
 				class = select(2, UnitClass(unit))
 			elseif unit == UNIT.PET then
-				class = select(2, UnitClass(UNIT.PLAYER))
+				class = (addon.variables and addon.variables.unitClass) or select(2, UnitClass(UNIT.PLAYER))
 			end
 			local cr, cg, cb = getClassColor(class)
 			if cr then

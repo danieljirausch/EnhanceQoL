@@ -2007,6 +2007,38 @@ applyAbsorbLayout = function(bar, cfg)
 	absorb._rbOverfill = overfill and true or false
 end
 
+function ResourceBars.SyncAbsorbBarAppearance(bar, cfg, forceLayout)
+	if not bar or not bar.absorbBar then return end
+	cfg = cfg or {}
+
+	local absorb = bar.absorbBar
+	local desiredTexture = resolveTexture({ barTexture = cfg.absorbTexture or cfg.barTexture })
+	local currentTexture = absorb.GetStatusBarTexture and absorb:GetStatusBarTexture() or nil
+	local currentPath = currentTexture and currentTexture.GetTexture and currentTexture:GetTexture() or nil
+	local textureChanged = currentPath ~= desiredTexture
+
+	if textureChanged and absorb.SetStatusBarTexture then absorb:SetStatusBarTexture(desiredTexture) end
+
+	local wantVertical = cfg.verticalFill == true
+	if absorb.SetOrientation and absorb._isVertical ~= wantVertical then
+		absorb:SetOrientation(wantVertical and "VERTICAL" or "HORIZONTAL")
+		absorb._isVertical = wantVertical
+	end
+
+	local tex = absorb.GetStatusBarTexture and absorb:GetStatusBarTexture() or nil
+	if tex and tex.SetRotation then
+		if textureChanged or absorb._texRotation ~= 0 then tex:SetRotation(0) end
+		if absorb._texRotation ~= 0 then textureChanged = true end
+		absorb._texRotation = 0
+	end
+
+	local reverseAbsorb = cfg.absorbReverseFill == true
+	if cfg.absorbOverfill then reverseAbsorb = false end
+	if absorb.SetReverseFill then absorb:SetReverseFill(reverseAbsorb) end
+
+	if forceLayout or textureChanged or cfg.absorbOverfill then applyAbsorbLayout(bar, cfg) end
+end
+
 local function applyBackdrop(frame, cfg)
 	if not frame then return end
 	cfg = cfg or {}
@@ -2492,26 +2524,7 @@ local function configureBarBehavior(bar, cfg, pType)
 	if bar.SetReverseFill then bar:SetReverseFill(cfg.reverseFill == true) end
 
 	if pType ~= "RUNES" and bar.SetOrientation then bar:SetOrientation((cfg.verticalFill == true) and "VERTICAL" or "HORIZONTAL") end
-	if pType == "HEALTH" and bar.absorbBar then
-		local absorb = bar.absorbBar
-		local wantVertical = cfg.verticalFill == true
-		if absorb.SetOrientation and absorb._isVertical ~= wantVertical then
-			absorb:SetOrientation(wantVertical and "VERTICAL" or "HORIZONTAL")
-			absorb._isVertical = wantVertical
-		end
-		local tex = absorb:GetStatusBarTexture()
-		if tex then
-			local desiredRotation = wantVertical and (math.pi / 2) or 0
-			if absorb._texRotation ~= desiredRotation then
-				tex:SetRotation(desiredRotation)
-				absorb._texRotation = desiredRotation
-			end
-		end
-		local reverseAbsorb = cfg.absorbReverseFill == true
-		if cfg.absorbOverfill then reverseAbsorb = false end
-		if absorb.SetReverseFill then absorb:SetReverseFill(reverseAbsorb) end
-		applyAbsorbLayout(bar, cfg)
-	end
+	if pType == "HEALTH" and bar.absorbBar then ResourceBars.SyncAbsorbBarAppearance(bar, cfg, true) end
 
 	if bar._rbBackdropState and bar._rbBackdropState.insets then applyStatusBarInsets(bar, bar._rbBackdropState.insets, true) end
 end
@@ -2950,10 +2963,7 @@ function updateHealthBar(evt)
 				absorbBar._lastVal = 0
 			else
 				if not absorbBar:IsShown() then absorbBar:Show() end
-				-- Texture
-				local absorbTex = resolveTexture({ barTexture = settings.absorbTexture or settings.barTexture })
-				local curTex = absorbBar:GetStatusBarTexture() and absorbBar:GetStatusBarTexture():GetTexture()
-				if curTex ~= absorbTex then absorbBar:SetStatusBarTexture(absorbTex) end
+				ResourceBars.SyncAbsorbBarAppearance(healthBar, settings)
 				-- Color
 				local defAbsorb = { 0.8, 0.8, 0.8, 0.8 }
 				local col = (settings.absorbUseCustomColor and settings.absorbColor) or defAbsorb
@@ -2965,7 +2975,6 @@ function updateHealthBar(evt)
 
 				local abs = UnitGetTotalAbsorbs("player") or 0
 				if settings.absorbSample then abs = maxHealth * 0.6 end
-				if settings.absorbOverfill then applyAbsorbLayout(healthBar, settings) end
 				if addon.variables.isMidnight then
 					absorbBar:SetMinMaxValues(0, maxHealth)
 					setBarValue(absorbBar, abs, smooth)
@@ -3125,21 +3134,8 @@ function createHealthBar()
 		absorbBar:SetStatusBarTexture(resolveTexture({ barTexture = cfgTexH.absorbTexture or cfgTexH.barTexture }))
 	end
 	absorbBar:SetStatusBarColor(0.8, 0.8, 0.8, 0.8)
-	local wantVertical = settings and settings.verticalFill == true
-	if absorbBar.SetOrientation and absorbBar._isVertical ~= wantVertical then absorbBar:SetOrientation(wantVertical and "VERTICAL" or "HORIZONTAL") end
-	absorbBar._isVertical = wantVertical
-	local reverseAbsorb = settings and settings.absorbReverseFill == true
-	if settings and settings.absorbOverfill then reverseAbsorb = false end
-	if absorbBar.SetReverseFill then absorbBar:SetReverseFill(reverseAbsorb) end
-	local absorbTex = absorbBar:GetStatusBarTexture()
-	if absorbTex then
-		local desiredRotation = wantVertical and (math.pi / 2) or 0
-		if absorbBar._texRotation ~= desiredRotation then
-			absorbTex:SetRotation(desiredRotation)
-			absorbBar._texRotation = desiredRotation
-		end
-	end
 	healthBar.absorbBar = absorbBar
+	ResourceBars.SyncAbsorbBarAppearance(healthBar, settings, true)
 	if healthBar._rbBackdropState and healthBar._rbBackdropState.insets then applyStatusBarInsets(healthBar, healthBar._rbBackdropState.insets, true) end
 
 	updateHealthBar("UNIT_ABSORB_AMOUNT_CHANGED")
@@ -6363,7 +6359,7 @@ function ResourceBars.Refresh()
 		local hTex = resolveTexture(hCfg2)
 		healthBar:SetStatusBarTexture(hTex)
 		configureSpecialTexture(healthBar, "HEALTH", hCfg2)
-		if healthBar.absorbBar then healthBar.absorbBar:SetStatusBarTexture(hTex) end
+		if healthBar.absorbBar then ResourceBars.SyncAbsorbBarAppearance(healthBar, hCfg2, true) end
 		healthBar:ClearAllPoints()
 		healthBar:SetPoint(a.point or "TOPLEFT", rel, a.relativePoint or a.point or "TOPLEFT", a.x or 0, a.y or 0)
 	end
@@ -6445,19 +6441,7 @@ function ResourceBars.Refresh()
 		if healthBar.text then applyFontToString(healthBar.text, hCfg) end
 		applyTextPosition(healthBar, hCfg, 3, 0)
 		configureBarBehavior(healthBar, hCfg, "HEALTH")
-		if healthBar.absorbBar then
-			local absorbBar = healthBar.absorbBar
-			absorbBar:SetStatusBarTexture(resolveTexture({ barTexture = hCfg.absorbTexture or hCfg.barTexture }))
-			if hCfg.verticalFill then
-				absorbBar:SetOrientation("VERTICAL")
-			else
-				absorbBar:SetOrientation("HORIZONTAL")
-			end
-			local reverseAbsorb = hCfg.absorbReverseFill == true
-			if hCfg.absorbOverfill then reverseAbsorb = false end
-			if absorbBar.SetReverseFill then absorbBar:SetReverseFill(reverseAbsorb) end
-			applyAbsorbLayout(healthBar, hCfg)
-		end
+		if healthBar.absorbBar then ResourceBars.SyncAbsorbBarAppearance(healthBar, hCfg, true) end
 	end
 
 	for pType, bar in pairs(powerbar) do
