@@ -1271,7 +1271,7 @@ local function resolveSoundFile(soundName)
 	return value
 end
 
-local function playReadySound(soundName)
+local function playSoundName(soundName)
 	if not soundName or soundName == "" then return end
 	local numeric = tonumber(soundName)
 	if numeric and PlaySound then
@@ -1280,6 +1280,17 @@ local function playReadySound(soundName)
 	end
 	local file = resolveSoundFile(soundName)
 	if file and PlaySoundFile then PlaySoundFile(file, "Master") end
+end
+
+function CooldownPanels:GetEntrySoundConfig(entry, requestedMode)
+	if type(entry) ~= "table" then return nil end
+	local entryType = entry.type
+	local mode = requestedMode
+	if mode == nil and entryType ~= "MACRO" and entryType ~= "STANCE" and entryType ~= "CDM_AURA" then mode = "ready" end
+	if mode == "ready" and entryType ~= "MACRO" and entryType ~= "STANCE" and entryType ~= "CDM_AURA" then
+		return mode, "soundReady", "soundReadyFile", L["CooldownPanelSoundReady"] or "Sound when ready"
+	end
+	return nil
 end
 
 local function setExampleCooldown(cooldown)
@@ -2730,6 +2741,13 @@ function CooldownPanels:ResolveEntryGlowStyle(layout, entry)
 	return duration, color
 end
 
+function CooldownPanels:ResolveEntryPandemicGlowColor(layout, entry)
+	local panelReadyColor = Helper.NormalizeColor(layout and layout.readyGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
+	local panelPandemicColor = Helper.NormalizeColor(layout and layout.pandemicGlowColor, panelReadyColor)
+	if not entry or entry.glowUseGlobal ~= false then return panelPandemicColor end
+	return Helper.NormalizeColor(entry.pandemicGlowColor, panelPandemicColor)
+end
+
 function CooldownPanels:ResolveEntryNoDesaturation(layout, entry)
 	local panelValue = layout and layout.noDesaturation == true
 	if not entry or entry.noDesaturationUseGlobal ~= false then return panelValue end
@@ -3103,6 +3121,7 @@ local function setGlow(frame, enabled, glowColor)
 	if not frame then return end
 	local fallbackColor = (Helper and Helper.PANEL_LAYOUT_DEFAULTS and Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) or { 1, 0.82, 0.2, 1 }
 	local normalizedGlowColor = enabled and Helper.NormalizeColor(glowColor, fallbackColor) or nil
+	local wasEnabled = frame._glow == true
 	local colorChanged = false
 	if enabled and normalizedGlowColor then
 		local currentGlowColor = frame._glowColor
@@ -3122,7 +3141,7 @@ local function setGlow(frame, enabled, glowColor)
 
 	if LBG then
 		if enabled then
-			LBG.ShowOverlayGlow(frame)
+			if not wasEnabled or not frame.__LBGoverlay then LBG.ShowOverlayGlow(frame) end
 			local overlay = frame.__LBGoverlay
 			if overlay and normalizedGlowColor then
 				local r, g, b, a = normalizedGlowColor[1], normalizedGlowColor[2], normalizedGlowColor[3], normalizedGlowColor[4]
@@ -3133,7 +3152,7 @@ local function setGlow(frame, enabled, glowColor)
 				if overlay.outerGlowOver then overlay.outerGlowOver:SetVertexColor(r, g, b, a) end
 				if overlay.ants then overlay.ants:SetVertexColor(r, g, b, a) end
 			end
-		else
+		elseif wasEnabled then
 			LBG.HideOverlayGlow(frame)
 		end
 		return
@@ -3194,7 +3213,7 @@ local function onCooldownDone(self)
 	if not isGCD then
 		-- Sound should only fire once per displayed cooldown.
 		if self._eqolSoundReady then
-			playReadySound(self._eqolSoundName)
+			playSoundName(self._eqolSoundName)
 			self._eqolSoundReady = nil
 		end
 
@@ -4345,17 +4364,19 @@ local function showSoundMenu(owner, panelId, entryId)
 	local panel = CooldownPanels:GetPanel(panelId)
 	local entry = panel and panel.entries and panel.entries[entryId]
 	if not entry then return end
+	local _, _, soundField, title = CooldownPanels:GetEntrySoundConfig(entry)
+	if not soundField then return end
 	local options = getSoundOptions()
 	if not options or #options == 0 then return end
 	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
 		rootDescription:SetTag("MENU_EQOL_COOLDOWN_PANEL_SOUND")
 		if rootDescription.SetScrollMode then rootDescription:SetScrollMode(260) end
-		rootDescription:CreateTitle(L["CooldownPanelSoundReady"] or "Sound when ready")
+		rootDescription:CreateTitle(title or (L["CooldownPanelSoundReady"] or "Sound when ready"))
 		for _, soundName in ipairs(options) do
 			local label = getSoundLabel(soundName)
-			rootDescription:CreateRadio(label, function() return normalizeSoundName(entry.soundReadyFile) == soundName end, function()
-				entry.soundReadyFile = soundName
-				playReadySound(soundName)
+			rootDescription:CreateRadio(label, function() return normalizeSoundName(entry[soundField]) == soundName end, function()
+				entry[soundField] = soundName
+				playSoundName(soundName)
 				CooldownPanels:RefreshPanel(panelId)
 				CooldownPanels:RefreshEditor()
 			end)
@@ -4501,7 +4522,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		return CooldownPanels:GetLayoutEntryStandaloneEffectiveType(currentEntry)
 	end
 
-	local function refreshEntryViews() CooldownPanels:RefreshPanel(panelId) end
+	local function refreshEntryViews()
+		CooldownPanels:RefreshPanel(panelId)
+		if CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
+		local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
+		if state and normalizeId(state.panelId) == panelId and normalizeId(state.entryId) == entryId then CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId) end
+	end
 
 	local function setEntryField(field, value)
 		local _, currentEntry = getEntry()
@@ -4517,6 +4543,14 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local normalized = value == true
 		if (currentEntry[field] == true) == normalized then return end
 		currentEntry[field] = normalized and true or false
+		if currentEntry.type == "CDM_AURA" and normalized then
+			if field == "glowReady" then
+				currentEntry.pandemicGlow = false
+			elseif field == "pandemicGlow" then
+				currentEntry.glowReady = false
+				CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true)
+			end
+		end
 		if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
 		if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
 		refreshEntryViews()
@@ -4661,10 +4695,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 	local function setSoundReadyFile(soundName)
 		local _, currentEntry = getEntry()
 		if not currentEntry then return end
+		local _, _, soundField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+		if not soundField then return end
 		local normalized = normalizeSoundName(soundName)
-		if normalizeSoundName(currentEntry.soundReadyFile) == normalized then return end
-		currentEntry.soundReadyFile = normalized
-		playReadySound(normalized)
+		if normalizeSoundName(currentEntry[soundField]) == normalized then return end
+		currentEntry[soundField] = normalized
+		playSoundName(normalized)
 		refreshEntryViews()
 	end
 
@@ -4753,6 +4789,18 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local _, currentEntry = getEntry()
 		local _, color = CooldownPanels:ResolveEntryGlowStyle(layout, currentEntry)
 		return color
+	end
+
+	local function getResolvedPandemicGlowColor()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:ResolveEntryPandemicGlowColor(layout, currentEntry)
+	end
+
+	local function entryUsesConfiguredGlow(currentEntry)
+		if not currentEntry or currentEntry.type == "MACRO" then return false end
+		if currentEntry.type == "CDM_AURA" then return currentEntry.glowReady == true or currentEntry.pandemicGlow == true end
+		return currentEntry.glowReady == true
 	end
 
 	local function getResolvedNoDesaturation()
@@ -5813,7 +5861,9 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			isShown = function() return getEffectiveType() ~= "MACRO" end,
 		},
 		{
-			name = (initialEffectiveType == "STANCE" and (_G.GLOW or "Glow")) or (L["CooldownPanelGlowReady"] or "Glow when ready"),
+			name = (initialEffectiveType == "STANCE" and (_G.GLOW or "Glow"))
+				or (initialEffectiveType == "CDM_AURA" and (L["CooldownPanelGlowActive"] or "Glow when active"))
+				or (L["CooldownPanelGlowReady"] or "Glow when ready"),
 			kind = SettingType.Checkbox,
 			parentId = "cooldownPanelStandaloneGlow",
 			isShown = function() return getEffectiveType() ~= "MACRO" end,
@@ -5822,6 +5872,17 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return currentEntry and currentEntry.glowReady == true or false
 			end,
 			set = function(_, value) setEntryBoolean("glowReady", value) end,
+		},
+		{
+			name = L["CooldownPanelGlowPandemic"] or "Pandemic glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneGlow",
+			isShown = function() return getEffectiveType() == "CDM_AURA" end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.pandemicGlow == true or false
+			end,
+			set = function(_, value) setEntryBoolean("pandemicGlow", value) end,
 		},
 		{
 			name = L["CooldownPanelOverwriteGlobalDefault"] or "Overwrite global default",
@@ -5842,7 +5903,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			maxValue = 30,
 			valueStep = 1,
 			allowInput = true,
-			isShown = function() return getEffectiveType() ~= "MACRO" end,
+			isShown = function() return getEffectiveType() ~= "MACRO" and getEffectiveType() ~= "CDM_AURA" end,
 			disabled = function()
 				local _, currentEntry = getEntry()
 				return not (currentEntry and currentEntry.glowReady == true and currentEntry.glowUseGlobal == false)
@@ -5855,20 +5916,47 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) .. "s" end,
 		},
 		{
-			name = L["CooldownPanelGlowColor"] or "Ready glow color",
+			name = L["CooldownPanelGlowColorGeneric"] or "Glow color",
 			kind = SettingType.Color,
 			parentId = "cooldownPanelStandaloneGlow",
 			hasOpacity = true,
 			isShown = function() return getEffectiveType() ~= "MACRO" end,
 			disabled = function()
 				local _, currentEntry = getEntry()
-				return not (currentEntry and currentEntry.glowReady == true and currentEntry.glowUseGlobal == false)
+				return not (currentEntry and entryUsesConfiguredGlow(currentEntry) and currentEntry.glowUseGlobal == false)
 			end,
 			get = function()
 				local color = getResolvedGlowColor()
 				return { r = color[1], g = color[2], b = color[3], a = color[4] }
 			end,
 			set = setGlowColor,
+		},
+		{
+			name = L["CooldownPanelGlowColorPandemic"] or "Pandemic glow color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandaloneGlow",
+			hasOpacity = true,
+			isShown = function() return getEffectiveType() == "CDM_AURA" end,
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.pandemicGlow == true)
+			end,
+			get = function()
+				local color = getResolvedPandemicGlowColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value)
+				local _, currentEntry = getEntry()
+				if not currentEntry then return end
+				local fallbackColor = getResolvedGlowColor()
+				local normalized = Helper.NormalizeColor(value, fallbackColor)
+				if normalized[1] == fallbackColor[1] and normalized[2] == fallbackColor[2] and normalized[3] == fallbackColor[3] and normalized[4] == fallbackColor[4] then
+					currentEntry.pandemicGlowColor = nil
+				else
+					currentEntry.pandemicGlowColor = normalized
+				end
+				refreshEntryViews()
+			end,
 		},
 		{
 			name = L["CooldownPanelSound"] or "Sound",
@@ -5884,9 +5972,14 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			isShown = function() return allowsStandaloneEntryReadySound(getEffectiveType()) end,
 			get = function()
 				local _, currentEntry = getEntry()
-				return currentEntry and currentEntry.soundReady == true or false
+				local _, enabledField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+				return currentEntry and enabledField and currentEntry[enabledField] == true or false
 			end,
-			set = function(_, value) setEntryBoolean("soundReady", value) end,
+			set = function(_, value)
+				local _, currentEntry = getEntry()
+				local _, enabledField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+				if enabledField then setEntryBoolean(enabledField, value) end
+			end,
 		},
 		{
 			name = L["CooldownPanelSound"] or "Sound",
@@ -5896,11 +5989,13 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			isShown = function() return allowsStandaloneEntryReadySound(getEffectiveType()) end,
 			disabled = function()
 				local _, currentEntry = getEntry()
-				return not (currentEntry and currentEntry.soundReady == true)
+				local _, enabledField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+				return not (currentEntry and enabledField and currentEntry[enabledField] == true)
 			end,
 			get = function()
 				local _, currentEntry = getEntry()
-				return normalizeSoundName(currentEntry and currentEntry.soundReadyFile)
+				local _, _, soundField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+				return normalizeSoundName(currentEntry and soundField and currentEntry[soundField])
 			end,
 			set = function(_, value) setSoundReadyFile(value) end,
 			generator = function(_, root)
@@ -5908,7 +6003,8 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 					local label = getSoundLabel(soundName)
 					root:CreateRadio(label, function()
 						local _, currentEntry = getEntry()
-						return normalizeSoundName(currentEntry and currentEntry.soundReadyFile) == soundName
+						local _, _, soundField = CooldownPanels:GetEntrySoundConfig(currentEntry)
+						return normalizeSoundName(currentEntry and soundField and currentEntry[soundField]) == soundName
 					end, function() setSoundReadyFile(soundName) end)
 				end
 			end,
@@ -6095,6 +6191,11 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		local layout = getLayout()
 		local _, color = CooldownPanels:ResolveEntryGlowStyle(layout, nil)
 		return color
+	end
+
+	local function getResolvedPanelPandemicGlowColor()
+		local layout = getLayout()
+		return CooldownPanels:ResolveEntryPandemicGlowColor(layout, nil)
 	end
 
 	local function getPanelStackFontSelection()
@@ -7031,6 +7132,17 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			end,
 			set = function(_, value) setPanelLayout("readyGlowColor", value) end,
 		},
+		{
+			name = L["CooldownPanelGlowColorPandemic"] or "Pandemic glow color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandalonePanelGlow",
+			hasOpacity = true,
+			get = function()
+				local color = getResolvedPanelPandemicGlowColor()
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setPanelLayout("pandemicGlowColor", value) end,
+		},
 	}
 
 	local dialog = lib:ShowStandaloneSettingsDialog(hostFrame, {
@@ -7480,8 +7592,11 @@ local function ensureEditor()
 	local cbGlow = Helper.CreateCheck(rightContent, L["CooldownPanelGlowReady"] or "Glow when ready")
 	cbGlow:SetPoint("TOPLEFT", cbStacks, "BOTTOMLEFT", 0, -4)
 
+	local cbPandemicGlow = Helper.CreateCheck(rightContent, L["CooldownPanelGlowPandemic"] or "Pandemic glow")
+	cbPandemicGlow:SetPoint("TOPLEFT", cbGlow, "BOTTOMLEFT", 0, -4)
+
 	local glowDuration = Helper.CreateSlider(rightContent, 180, 0, 30, 1)
-	glowDuration:SetPoint("TOPLEFT", cbGlow, "BOTTOMLEFT", 18, -8)
+	glowDuration:SetPoint("TOPLEFT", cbPandemicGlow, "BOTTOMLEFT", 18, -8)
 
 	local cbSound = Helper.CreateCheck(rightContent, L["CooldownPanelSoundReady"] or "Sound when ready")
 	cbSound:SetPoint("TOPLEFT", glowDuration, "BOTTOMLEFT", -18, -6)
@@ -7581,16 +7696,19 @@ local function ensureEditor()
 	addItemBox:SetPoint("LEFT", addItemLabel, "RIGHT", 6, 0)
 	addItemBox:SetNumeric(true)
 
-	local editModeButton = Helper.CreateButton(middle, _G.HUD_EDIT_MODE_MENU or L["CooldownPanelEditModeButton"] or "Edit Mode", 110, 20)
+	local bottomActionButtonWidth = 120
+	local bottomActionButtonHeight = 20
+
+	local editModeButton = Helper.CreateButton(middle, _G.HUD_EDIT_MODE_MENU or L["CooldownPanelEditModeButton"] or "Edit Mode", bottomActionButtonWidth, bottomActionButtonHeight)
 	editModeButton:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -12, 44)
 
-	local layoutEditButton = Helper.CreateButton(middle, L["CooldownPanelLayoutEdit"] or "Layout edit", 110, 20)
+	local layoutEditButton = Helper.CreateButton(middle, L["CooldownPanelLayoutEdit"] or "Layout edit", bottomActionButtonWidth, bottomActionButtonHeight)
 	layoutEditButton:SetPoint("RIGHT", editModeButton, "LEFT", -8, 0)
 
-	local slotButton = Helper.CreateButton(middle, L["CooldownPanelAddSlot"] or "Add more", 120, 20)
+	local slotButton = Helper.CreateButton(middle, L["CooldownPanelAddSlot"] or "Add more", bottomActionButtonWidth, bottomActionButtonHeight)
 	slotButton:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -12, 18)
 
-	local importCDMButton = Helper.CreateButton(middle, L["CooldownPanelImportCDM"] or "Import CDM", 120, 20)
+	local importCDMButton = Helper.CreateButton(middle, L["CooldownPanelImportCDM"] or "Import CDM", bottomActionButtonWidth, bottomActionButtonHeight)
 	importCDMButton:SetPoint("RIGHT", slotButton, "LEFT", -8, 0)
 
 	local function updateEditModeButton()
@@ -7684,6 +7802,7 @@ local function ensureEditor()
 			staticTextBox = staticTextBox,
 			cbStaticTextDuringCD = cbStaticTextDuringCD,
 			cbGlow = cbGlow,
+			cbPandemicGlow = cbPandemicGlow,
 			cbSound = cbSound,
 			glowDuration = glowDuration,
 			soundButton = soundButton,
@@ -7852,6 +7971,14 @@ local function ensureEditor()
 			local entry = panel and panel.entries and panel.entries[entryId]
 			if not entry then return end
 			entry[field] = self:GetChecked() and true or false
+			if entry.type == "CDM_AURA" and entry[field] == true then
+				if field == "glowReady" then
+					entry.pandemicGlow = false
+				elseif field == "pandemicGlow" then
+					entry.glowReady = false
+					CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true)
+				end
+			end
 			if field == "glowReady" then CooldownPanels.ClearReadyGlowEntryState(panelId, entryId, true) end
 			if field == "showCharges" then CooldownPanels:RebuildChargesIndex() end
 			CooldownPanels:RefreshPanel(panelId)
@@ -7913,7 +8040,18 @@ local function ensureEditor()
 	bindEntryToggle(cbShowWhenNoCooldown, "showWhenNoCooldown")
 	bindEntryToggle(cbStaticTextDuringCD, "staticTextShowOnCooldown")
 	bindEntryToggle(cbGlow, "glowReady")
-	bindEntryToggle(cbSound, "soundReady")
+	bindEntryToggle(cbPandemicGlow, "pandemicGlow")
+	cbSound:SetScript("OnClick", function(self)
+		local panelId = editor.selectedPanelId
+		local entryId = editor.selectedEntryId
+		local panel = panelId and CooldownPanels:GetPanel(panelId)
+		local entry = panel and panel.entries and panel.entries[entryId]
+		local _, enabledField = CooldownPanels:GetEntrySoundConfig(entry)
+		if not (entry and enabledField) then return end
+		entry[enabledField] = self:GetChecked() and true or false
+		CooldownPanels:RefreshPanel(panelId)
+		CooldownPanels:RefreshEditor()
+	end)
 	bindEntrySlider(glowDuration, "glowDuration", 0, 30)
 
 	local function applyStaticTextValue(self)
@@ -8641,11 +8779,15 @@ local function refreshPreview(editor, panel)
 			elseif icon.keybind then
 				icon.keybind:Hide()
 			end
-			if entry.type ~= "MACRO" and entry.glowReady and icon.previewGlowBorder then
-				local _, previewEntryGlowColor = CooldownPanels:ResolveEntryGlowStyle(baseLayout, entry)
+			if entry.type ~= "MACRO" and (entry.glowReady or entry.pandemicGlow) and icon.previewGlowBorder then
+				local previewEntryGlowColor = (entry.type == "CDM_AURA" and entry.pandemicGlow == true and CooldownPanels:ResolveEntryPandemicGlowColor(baseLayout, entry))
+					or select(2, CooldownPanels:ResolveEntryGlowStyle(baseLayout, entry))
 				CooldownPanels.ShowPreviewGlowBorder(icon, previewEntryGlowColor)
 			end
-			if entry.type ~= "MACRO" and entry.type ~= "STANCE" and entry.soundReady and icon.previewSoundBorder then icon.previewSoundBorder:Show() end
+			do
+				local _, previewSoundEnabledField = CooldownPanels:GetEntrySoundConfig(entry)
+				if previewSoundEnabledField and entry[previewSoundEnabledField] == true and icon.previewSoundBorder then icon.previewSoundBorder:Show() end
+			end
 		end
 	end
 
@@ -8691,6 +8833,7 @@ local function layoutInspectorToggles(inspector, entry)
 		hideControl(inspector.staticTextBox)
 		hideToggle(inspector.cbStaticTextDuringCD)
 		hideToggle(inspector.cbGlow)
+		hideToggle(inspector.cbPandemicGlow)
 		hideToggle(inspector.cbSound)
 		hideControl(inspector.glowDuration)
 		hideControl(inspector.soundButton)
@@ -8795,11 +8938,16 @@ local function layoutInspectorToggles(inspector, entry)
 	place(inspector.staticTextBox, allowStaticText, -2, -4)
 	place(inspector.cbStaticTextDuringCD, allowStaticText, -2, -6)
 	local showGlowToggle = entry.type ~= "MACRO"
+	local showPandemicGlowToggle = effectiveType == "CDM_AURA"
 	local showReadyEffects = entry.type ~= "MACRO" and entry.type ~= "STANCE" and entry.type ~= "CDM_AURA"
+	local _, soundEnabledField = CooldownPanels:GetEntrySoundConfig(entry)
+	local showSoundEffects = soundEnabledField ~= nil
 	place(inspector.cbGlow, showGlowToggle)
+	place(inspector.cbPandemicGlow, showPandemicGlowToggle)
+	local glowAnchor = (showPandemicGlowToggle and inspector.cbPandemicGlow and inspector.cbPandemicGlow:IsShown()) and inspector.cbPandemicGlow or inspector.cbGlow
 	if showReadyEffects and inspector.glowDuration then
 		inspector.glowDuration:ClearAllPoints()
-		inspector.glowDuration:SetPoint("TOPLEFT", inspector.cbGlow, "BOTTOMLEFT", 18, -8)
+		inspector.glowDuration:SetPoint("TOPLEFT", glowAnchor, "BOTTOMLEFT", 18, -8)
 		if entry.glowReady then
 			inspector.glowDuration:Show()
 			inspector.glowDuration:Enable()
@@ -8814,11 +8962,11 @@ local function layoutInspectorToggles(inspector, entry)
 	end
 	local soundOffsetX = 0
 	if showReadyEffects and inspector.glowDuration and entry.glowReady then soundOffsetX = -20 end
-	place(inspector.cbSound, showReadyEffects, soundOffsetX, -6)
-	if showReadyEffects and inspector.soundButton then
+	place(inspector.cbSound, showSoundEffects, soundOffsetX, -6)
+	if showSoundEffects and inspector.soundButton then
 		inspector.soundButton:ClearAllPoints()
 		inspector.soundButton:SetPoint("TOPLEFT", inspector.cbSound, "BOTTOMLEFT", 18, -6)
-		if entry.soundReady then
+		if entry[soundEnabledField] == true then
 			inspector.soundButton:Show()
 			inspector.soundButton:Enable()
 			prev = inspector.soundButton
@@ -8934,6 +9082,11 @@ local function refreshInspector(editor, panel, entry)
 				inspector.cbGlow.Text:SetText(L["CooldownPanelGlowReady"] or "Glow when ready")
 			end
 		end
+		if inspector.cbPandemicGlow and inspector.cbPandemicGlow.Text then inspector.cbPandemicGlow.Text:SetText(L["CooldownPanelGlowPandemic"] or "Pandemic glow") end
+		if inspector.cbSound and inspector.cbSound.Text then
+			local _, _, _, soundLabel = CooldownPanels:GetEntrySoundConfig(entry)
+			inspector.cbSound.Text:SetText(soundLabel or (L["CooldownPanelSoundReady"] or "Sound when ready"))
+		end
 
 		inspector.cbCooldownText:SetChecked(entry.showCooldownText ~= false)
 		if effectiveType == "STANCE" then
@@ -8949,8 +9102,12 @@ local function refreshInspector(editor, panel, entry)
 		inspector.cbShowWhenEmpty:SetChecked(effectiveType == "ITEM" and entry.showWhenEmpty == true)
 		inspector.cbShowWhenNoCooldown:SetChecked(effectiveType == "SLOT" and entry.showWhenNoCooldown == true)
 		inspector.cbGlow:SetChecked(entry.type ~= "MACRO" and entry.glowReady and true or false)
-		inspector.cbSound:SetChecked(entry.type ~= "MACRO" and entry.type ~= "STANCE" and entry.type ~= "CDM_AURA" and entry.soundReady and true or false)
-		if inspector.soundButton then inspector.soundButton:SetText(getSoundButtonText(entry.soundReadyFile)) end
+		if inspector.cbPandemicGlow then inspector.cbPandemicGlow:SetChecked(effectiveType == "CDM_AURA" and entry.pandemicGlow == true) end
+		do
+			local _, soundEnabledField, soundField = CooldownPanels:GetEntrySoundConfig(entry)
+			inspector.cbSound:SetChecked(soundEnabledField and entry[soundEnabledField] == true or false)
+			if inspector.soundButton then inspector.soundButton:SetText(getSoundButtonText(soundField and entry[soundField] or nil)) end
+		end
 		if inspector.staticTextBox then inspector.staticTextBox:SetText(entry.staticText or "") end
 		if inspector.cbStaticTextDuringCD then inspector.cbStaticTextDuringCD:SetChecked(entry.staticTextShowOnCooldown == true) end
 		if inspector.glowDuration then
@@ -8982,6 +9139,8 @@ local function refreshInspector(editor, panel, entry)
 		end
 		if inspector.cbAlwaysShow and inspector.cbAlwaysShow.Text then inspector.cbAlwaysShow.Text:SetText(L["CooldownPanelAlwaysShow"] or "Always show") end
 		if inspector.cbGlow and inspector.cbGlow.Text then inspector.cbGlow.Text:SetText(L["CooldownPanelGlowReady"] or "Glow when ready") end
+		if inspector.cbPandemicGlow and inspector.cbPandemicGlow.Text then inspector.cbPandemicGlow.Text:SetText(L["CooldownPanelGlowPandemic"] or "Pandemic glow") end
+		if inspector.cbSound and inspector.cbSound.Text then inspector.cbSound.Text:SetText(L["CooldownPanelSoundReady"] or "Sound when ready") end
 
 		if inspector.staticTextBox then inspector.staticTextBox:SetText("") end
 		if inspector.cbStaticTextDuringCD then inspector.cbStaticTextDuringCD:SetChecked(false) end
@@ -9674,10 +9833,22 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showGhostIcon = self:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, layoutEditActive)
 			local entryNoDesaturation = self:ResolveEntryNoDesaturation(layout, entry)
 			local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe = self:ResolveEntryCooldownVisuals(layout, entry)
+			local cdmAuraActiveGlow = entry.type == "CDM_AURA" and entry.glowReady == true
+			local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
 			local glowReady = entry.type ~= "MACRO" and entry.type ~= "CDM_AURA" and entry.glowReady ~= false
 			local glowDuration, glowColor = CooldownPanels:ResolveEntryGlowStyle(layout, entry)
-			local soundReady = entry.type ~= "MACRO" and entry.type ~= "STANCE" and entry.type ~= "CDM_AURA" and entry.soundReady == true
-			local soundName = normalizeSoundName(entry.soundReadyFile)
+			local pandemicGlowColor = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryPandemicGlowColor(layout, entry) or glowColor
+			local soundReady = false
+			local soundName = normalizeSoundName(nil)
+			local previewSound = false
+			do
+				local _, soundEnabledField, soundField = self:GetEntrySoundConfig(entry)
+				if soundEnabledField and soundField then
+					previewSound = entry[soundEnabledField] == true
+					soundName = normalizeSoundName(entry[soundField])
+					soundReady = resolvedType ~= "CDM_AURA" and previewSound
+				end
+			end
 			local baseSpellId = resolvedType == "SPELL" and ((macro and macro.spellID) or entry.spellID) or nil
 			local effectiveSpellId = baseSpellId and getEffectiveSpellId(baseSpellId) or nil
 			local stanceRelevant = resolvedType == "STANCE" and CooldownPanels.IsStanceEntryRelevant and CooldownPanels:IsStanceEntryRelevant(entry) or false
@@ -9886,7 +10057,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					data.overlayGlow = true
 					data.overlayGlowColor = glowColor
 				end
-				if resolvedType == "CDM_AURA" and entry.glowReady == true and cdmAuraData and cdmAuraData.active == true then
+				if resolvedType == "CDM_AURA" and cdmAuraPandemicGlow and cdmAuraData and cdmAuraData.pandemicActive == true then
+					data.overlayGlow = true
+					data.overlayGlowColor = pandemicGlowColor
+				elseif resolvedType == "CDM_AURA" and cdmAuraActiveGlow and cdmAuraData and cdmAuraData.active == true then
 					data.overlayGlow = true
 					data.overlayGlowColor = glowColor
 				end
@@ -9907,6 +10081,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.canTriggerReadyGlow = canTriggerReadyGlow
 				data.soundReady = soundReady
 				data.soundName = soundName
+				data.previewSound = previewSound
 				data.readyAt = runtime.readyAt[entryId]
 				data.stanceActive = stanceActive == true
 				data.stackCount = Helper.NormalizeDisplayCount(stackCount)
@@ -10323,7 +10498,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				staticTextCooldown = data.stanceActive == true or cdmAuraActive or durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
 			end
 			applyStaticText(icon, layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
-			if layoutEditActive and icon.previewSoundBorder and data.soundReady then icon.previewSoundBorder:Show() end
+			if layoutEditActive and icon.previewSoundBorder and data.previewSound then icon.previewSoundBorder:Show() end
 			if icon.rangeOverlay then
 				if data.rangeOverlay then
 					icon.rangeOverlay:SetColorTexture(rangeOverlayR or 1, rangeOverlayG or 0.1, rangeOverlayB or 0.1, rangeOverlayA or 0.35)
@@ -10371,9 +10546,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				simpleGlowEnabled = overlayGlow or ready
 				simpleGlowColor = ready and data.readyGlowColor or overlayGlowColor
 			end
-			if layoutEditActive and data.entry and data.entry.type ~= "MACRO" and data.entry.glowReady == true then
+			if layoutEditActive and data.entry and data.entry.type ~= "MACRO" and (data.entry.glowReady == true or data.entry.pandemicGlow == true) then
 				simpleGlowEnabled = true
-				simpleGlowColor = data.readyGlowColor or overlayGlowColor
+				simpleGlowColor = (data.entry.type == "CDM_AURA" and data.entry.pandemicGlow == true and CooldownPanels:ResolveEntryPandemicGlowColor(layout, data.entry))
+					or data.readyGlowColor
+					or overlayGlowColor
 			end
 			if layoutEditActive then
 				setGlow(icon, false)
@@ -10751,6 +10928,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.rangeOverlayColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor)
 	elseif field == "readyGlowColor" then
 		layout.readyGlowColor = Helper.NormalizeColor(value, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
+	elseif field == "pandemicGlowColor" then
+		layout.pandemicGlowColor = Helper.NormalizeColor(value, layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
 	elseif field == "readyGlowDuration" then
 		layout.readyGlowDuration = Helper.ClampInt(value, 0, 30, layout.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
 	elseif field == "noDesaturation" then
@@ -12260,6 +12439,19 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				set = function(_, value) applyEditLayout(panelId, "readyGlowColor", value) end,
 			},
 			{
+				name = L["CooldownPanelGlowColorPandemic"] or "Pandemic glow color",
+				kind = SettingType.Color,
+				parentId = "cooldownPanelOverlays",
+				hasOpacity = true,
+				default = Helper.NormalizeColor(layout.pandemicGlowColor, layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor),
+				get = function()
+					local color =
+						Helper.NormalizeColor(layout.pandemicGlowColor, layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
+					return { r = color[1], g = color[2], b = color[3], a = color[4] }
+				end,
+				set = function(_, value) applyEditLayout(panelId, "pandemicGlowColor", value) end,
+			},
+			{
 				name = L["CooldownPanelNoDesaturation"] or "No desaturation",
 				kind = SettingType.Checkbox,
 				parentId = "cooldownPanelOverlays",
@@ -13196,7 +13388,7 @@ local function triggerProcSoundForSpell(spellId)
 						if entry.type ~= "MACRO" and entry.soundReady == true then
 							local soundName = normalizeSoundName(entry.soundReadyFile)
 							if soundName and soundName ~= "None" then
-								playReadySound(soundName)
+								playSoundName(soundName)
 								return true
 							end
 						end

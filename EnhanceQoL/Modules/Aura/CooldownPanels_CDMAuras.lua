@@ -510,6 +510,7 @@ local function clearAuraMapping(runtime, key, state, clearTrackedAura)
 	if clearTrackedAura and state then
 		state.trackedAuraInstanceID = nil
 		state.trackedAuraUnit = nil
+		state.pandemicActive = nil
 		if auraUnit == "target" or normalizeTrackedUnit(state.trackUnit) == "target" then state.targetAuraEpoch = nil end
 	end
 end
@@ -542,6 +543,8 @@ local function hookFrame(frame)
 
 	if frame.SetAuraInstanceInfo then hooksecurefunc(frame, "SetAuraInstanceInfo", function(self) CDMAuras:HandleFrameAuraMutation(self, false) end) end
 	if frame.ClearAuraInstanceInfo then hooksecurefunc(frame, "ClearAuraInstanceInfo", function(self) CDMAuras:HandleFrameAuraMutation(self, true) end) end
+	if frame.ShowPandemicStateFrame then hooksecurefunc(frame, "ShowPandemicStateFrame", function(self) CDMAuras:HandleFramePandemicStateChanged(self, true) end) end
+	if frame.HidePandemicStateFrame then hooksecurefunc(frame, "HidePandemicStateFrame", function(self) CDMAuras:HandleFramePandemicStateChanged(self, false) end) end
 end
 
 local function registerFrameBinding(runtime, key, frame)
@@ -565,6 +568,7 @@ local function clearEntryState(key, state, clearTrackedAura)
 	end
 	state.boundSource = nil
 	state.lastActive = nil
+	state.pandemicActive = nil
 	state.targetAuraEpoch = nil
 end
 
@@ -768,6 +772,13 @@ local function getFrameAuraData(frame)
 	return nil, auraUnit, auraInstanceID
 end
 
+local function frameHasPandemicState(frame)
+	local pandemicIcon = frame and frame.PandemicIcon
+	if not (pandemicIcon and pandemicIcon.IsShown) then return false end
+	local ok, shown = pcall(pandemicIcon.IsShown, pandemicIcon)
+	return ok and shown == true
+end
+
 function CDMAuras:HandleFrameAuraMutation(frame, wasCleared)
 	if not frame then return end
 	local runtime = getRuntime()
@@ -786,15 +797,49 @@ function CDMAuras:HandleFrameAuraMutation(frame, wasCleared)
 				clearAuraMapping(runtime, key, state, false)
 				state.trackedAuraInstanceID = nil
 				state.trackedAuraUnit = nil
+				state.pandemicActive = nil
 				state.targetAuraEpoch = nil
 			elseif newAuraID and isFrameShowingTrackedSpell(frame, entry, state.trackUnit or auraUnit) then
 				state.trackUnit = normalizeTrackedUnit(auraUnit) or state.trackUnit
 				state.trackedAuraInstanceID = newAuraID
 				state.trackedAuraUnit = auraUnit or state.trackedAuraUnit
+				state.pandemicActive = normalizeTrackedUnit(auraUnit) == "target" and frameHasPandemicState(frame) or nil
 				if normalizeTrackedUnit(auraUnit) == "target" then state.targetAuraEpoch = runtime.targetEpoch or 0 end
 				registerAuraMapping(runtime, key, state, newAuraID, auraUnit)
 			end
 			refreshedPanels[state.panelId] = true
+		end
+	end
+
+	for panelId in pairs(refreshedPanels) do
+		requestPanelRefresh(panelId)
+	end
+end
+
+function CDMAuras:HandleFramePandemicStateChanged(frame, isActive)
+	if not frame then return end
+	local runtime = getRuntime()
+	local keys = runtime.frameEntries[frame]
+	if not keys then return end
+
+	local auraUnit = normalizeTrackedUnit(getFrameAuraUnit(frame))
+	local pandemicActive = isActive == true and frameHasPandemicState(frame) and auraUnit == "target"
+	local refreshedPanels = {}
+
+	for key in pairs(keys) do
+		local state = runtime.entryStates[key]
+		if state then
+			local _, entry = getPanelEntry(state.panelId, state.entryId)
+			if not entry or entry.type ~= ENTRY_TYPE then
+				clearEntryState(key, state, true)
+			else
+				local nextPandemicActive = false
+				if pandemicActive and isFrameShowingTrackedSpell(frame, entry, state.trackUnit or auraUnit) then nextPandemicActive = true end
+				if (state.pandemicActive == true) ~= nextPandemicActive then
+					state.pandemicActive = nextPandemicActive or nil
+					refreshedPanels[state.panelId] = true
+				end
+			end
 		end
 	end
 
@@ -828,6 +873,8 @@ function CDMAuras:NormalizeEntry(entry)
 	entry.showWhenMissing = false
 	entry.useHighestRank = false
 	entry.glowReady = entry.glowReady == true
+	entry.pandemicGlow = entry.pandemicGlow == true
+	if entry.glowReady and entry.pandemicGlow then entry.glowReady = false end
 	entry.soundReady = false
 end
 
@@ -858,6 +905,7 @@ function CDMAuras:CreateEntryData(idValue, overrides, defaults)
 	entry.showCooldownText = true
 	entry.showStacks = false
 	entry.glowReady = false
+	entry.pandemicGlow = false
 	entry.soundReady = false
 
 	if type(overrides) == "table" then
@@ -1122,6 +1170,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 			mappedAuraUnit = nil,
 			trackedAuraInstanceID = nil,
 			trackedAuraUnit = nil,
+			pandemicActive = nil,
 			targetAuraEpoch = nil,
 			trackUnit = nil,
 			lastActive = nil,
@@ -1218,6 +1267,16 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 
 	local hasTotemData = chosenFrame and chosenFrame.totemData ~= nil
 	local active = auraData ~= nil or hasTotemData
+	local trackedAuraUnit = normalizeTrackedUnit(auraUnit) or normalizeTrackedUnit(state.trackUnit) or normalizeTrackedUnit(state.trackedAuraUnit) or normalizeTrackedUnit(state.mappedAuraUnit)
+	local pandemicActive = false
+	if active and trackedAuraUnit == "target" then
+		if chosenFrame and canUseTargetAuraCache and isFrameShowingTrackedSpell(chosenFrame, entry, state.trackUnit) then
+			pandemicActive = frameHasPandemicState(chosenFrame)
+		else
+			pandemicActive = state.pandemicActive == true
+		end
+	end
+	state.pandemicActive = pandemicActive or nil
 	local iconTextureID = auraData and auraData.icon
 		or getFrameIconTexture(chosenFrame)
 		or entry.iconTextureID
@@ -1284,6 +1343,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry)
 		buffName = entry.buffName or (scanInfo and scanInfo.buffName) or getSpellName(entry.spellID) or tostring(entry.cooldownID),
 		iconTextureID = iconTextureID,
 		stackCount = stackCount,
+		pandemicActive = pandemicActive,
 		auraInstanceID = auraInstanceID,
 		auraUnit = auraUnit,
 		sourceType = chosenSource or preferredSource,
@@ -1367,6 +1427,7 @@ function CDMAuras:HandleUnitAura(_, unit, updateInfo)
 						if state.trackedAuraInstanceID == auraID and normalizeTrackedUnit(state.trackedAuraUnit) == unit then
 							state.trackedAuraInstanceID = nil
 							state.trackedAuraUnit = nil
+							state.pandemicActive = nil
 							if unit == "target" then state.targetAuraEpoch = nil end
 						end
 						state.mappedAuraInstanceID = nil

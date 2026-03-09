@@ -121,6 +121,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	rangeOverlayEnabled = false,
 	rangeOverlayColor = { 1, 0.1, 0.1, 0.35 },
 	readyGlowColor = { 1, 0.82, 0.2, 1 },
+	pandemicGlowColor = { 1, 0.82, 0.2, 1 },
 	readyGlowDuration = 0,
 	noDesaturation = false,
 	checkPower = false,
@@ -221,6 +222,8 @@ Helper.ENTRY_DEFAULTS = {
 	noDesaturationUseGlobal = true,
 	noDesaturation = false,
 	glowReady = false,
+	pandemicGlow = false,
+	pandemicGlowColor = nil,
 	glowUseGlobal = true,
 	glowDuration = 0,
 	soundReady = false,
@@ -942,6 +945,7 @@ function Helper.NormalizeRoot(root)
 	root.defaults.entry.showCharges = Helper.ENTRY_DEFAULTS.showCharges
 	root.defaults.entry.showStacks = Helper.ENTRY_DEFAULTS.showStacks
 	root.defaults.entry.glowReady = Helper.ENTRY_DEFAULTS.glowReady
+	root.defaults.entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow
 	root.defaults.entry.glowDuration = Helper.ENTRY_DEFAULTS.glowDuration
 	root.defaults.entry.soundReady = Helper.ENTRY_DEFAULTS.soundReady
 	root.defaults.entry.soundReadyFile = Helper.ENTRY_DEFAULTS.soundReadyFile
@@ -962,6 +966,10 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
 	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
 	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
+	panel.layout.pandemicGlowColor = Helper.NormalizeColor(
+		panel.layout.pandemicGlowColor,
+		layoutDefaults.pandemicGlowColor or panel.layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor
+	)
 	panel.layout.readyGlowDuration = Helper.ClampInt(panel.layout.readyGlowDuration, 0, 30, layoutDefaults.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
@@ -1042,6 +1050,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	if duration < 0 then duration = 0 end
 	if duration > 30 then duration = 30 end
 	entry.glowDuration = math.floor(duration + 0.5)
+	if type(entry.pandemicGlow) ~= "boolean" then entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow end
 	if type(entry.hideIcon) ~= "boolean" then entry.hideIcon = Helper.ENTRY_DEFAULTS.hideIcon end
 	if type(entry.iconSizeUseGlobal) ~= "boolean" then entry.iconSizeUseGlobal = true end
 	entry.iconSize = Helper.ClampInt(entry.iconSize, 12, 128, Helper.ENTRY_DEFAULTS.iconSize or Helper.PANEL_LAYOUT_DEFAULTS.iconSize or 36)
@@ -1110,6 +1119,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	if entry.cooldownTextX ~= nil then entry.cooldownTextX = Helper.ClampInt(entry.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if entry.cooldownTextY ~= nil then entry.cooldownTextY = Helper.ClampInt(entry.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if entry.glowColor ~= nil then entry.glowColor = Helper.NormalizeColor(entry.glowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) end
+	if entry.pandemicGlowColor ~= nil then entry.pandemicGlowColor = Helper.NormalizeColor(entry.pandemicGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) end
 	entry.slotIndex = Helper.NormalizeSlotIndex(entry.slotIndex)
 	entry.slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
 	entry.slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
