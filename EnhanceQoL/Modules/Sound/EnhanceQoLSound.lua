@@ -22,6 +22,60 @@ local function toggleSounds(sounds, state)
 	end
 end
 
+local function isPureNumbersTable(tbl)
+	local hasEntries
+	for _, v in pairs(tbl) do
+		hasEntries = true
+		if type(v) ~= "number" then return false end
+	end
+	return hasEntries and true or false
+end
+
+local function allChildrenArePureNumbers(tbl)
+	local hasEntries
+	for _, child in pairs(tbl) do
+		hasEntries = true
+		if type(child) ~= "table" or not isPureNumbersTable(child) then return false end
+	end
+	return hasEntries and true or false
+end
+
+local function applyMutedSoundTree(path, data)
+	if type(data) ~= "table" then return end
+
+	if isPureNumbersTable(data) then
+		local varName = "sounds_" .. table.concat(path, "_")
+		if addon.db[varName] then toggleSounds(data, true) end
+		return
+	end
+
+	if allChildrenArePureNumbers(data) then
+		if #path == 1 then
+			for key, child in pairs(data) do
+				path[#path + 1] = key
+				applyMutedSoundTree(path, child)
+				path[#path] = nil
+			end
+			return
+		end
+
+		local groupKey = table.concat(path, "_")
+		for key, child in pairs(data) do
+			local varName = "sounds_" .. groupKey .. "_" .. key
+			if addon.db[varName] then toggleSounds(child, true) end
+		end
+		return
+	end
+
+	for key, child in pairs(data) do
+		if type(child) == "table" then
+			path[#path + 1] = key
+			applyMutedSoundTree(path, child)
+			path[#path] = nil
+		end
+	end
+end
+
 -- hooksecurefunc("PlaySound", function(soundID, channel, forceNoDuplicates)
 -- 	if addon.db["sounds_DebugEnabled"] then print("Sound played:", soundID, "on channel:", channel) end
 -- end)
@@ -33,23 +87,8 @@ end
 
 local function applyMutedSounds()
 	if not addon.db or not addon.Sounds or not addon.Sounds.soundFiles then return end
-	for topic in pairs(addon.Sounds.soundFiles) do
-		if topic == "emotes" then
-		elseif topic == "spells" then
-			for spell in pairs(addon.Sounds.soundFiles[topic]) do
-				if addon.db["sounds_mounts_" .. spell] then toggleSounds(addon.Sounds.soundFiles[topic][spell], true) end
-			end
-		elseif topic == "mounts" then
-			for mount in pairs(addon.Sounds.soundFiles[topic]) do
-				if addon.db["sounds_mounts_" .. mount] then toggleSounds(addon.Sounds.soundFiles[topic][mount], true) end
-			end
-		else
-			for class in pairs(addon.Sounds.soundFiles[topic]) do
-				for key in pairs(addon.Sounds.soundFiles[topic][class]) do
-					if addon.db["sounds_" .. topic .. "_" .. class .. "_" .. key] then toggleSounds(addon.Sounds.soundFiles[topic][class][key], true) end
-				end
-			end
-		end
+	for topic, data in pairs(addon.Sounds.soundFiles) do
+		applyMutedSoundTree({ topic }, data)
 	end
 end
 

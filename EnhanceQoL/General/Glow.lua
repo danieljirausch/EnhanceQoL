@@ -161,7 +161,7 @@ local function ensureMarchingAntsOverlay(host)
 	overlay:EnableMouse(false)
 	overlay.Texture = overlay:CreateTexture(nil, "ARTWORK")
 	overlay.Texture:SetAllPoints()
-	if not (overlay.Texture.SetAtlas and overlay.Texture:SetAtlas(MARCHING_ANTS_ATLAS, true)) then
+	if not (overlay.Texture.SetAtlas and overlay.Texture:SetAtlas(MARCHING_ANTS_ATLAS)) then
 		overlay.Texture:SetTexture(BLIZZARD_GLOW_TEXTURE)
 		overlay.Texture:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
 	end
@@ -236,7 +236,7 @@ local function ensureFlashOverlay(host)
 	overlay:EnableMouse(false)
 	overlay.Texture = overlay:CreateTexture(nil, "ARTWORK")
 	overlay.Texture:SetAllPoints()
-	if not (overlay.Texture.SetAtlas and overlay.Texture:SetAtlas(FLASH_GLOW_ATLAS, true)) then
+	if not (overlay.Texture.SetAtlas and overlay.Texture:SetAtlas(FLASH_GLOW_ATLAS)) then
 		overlay.Texture:SetTexture(BLIZZARD_GLOW_TEXTURE)
 		overlay.Texture:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
 	end

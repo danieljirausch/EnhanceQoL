@@ -49,6 +49,8 @@ L["repair"] = "Repair sound"
 -- Dungeon
 L["tww"] = "The War Within"
 L["stonevault"] = "The Stonevault"
+L["dundun"] = "Abundance (Dundun talking head only)"
+L["valeera"] = "Delves (Valeera in-combat comments)"
 L["dagran_thaurissan_ii"] = "Dagran Thaurissan II"
 L["priory_of_the_sacred_flame_npc"] = "Priory of the Sacred Flame NPCs"
 L["rookery_npc"] = "Rookery NPCs"
