@@ -34,6 +34,8 @@ local COOLDOWN_VIEWER_VISIBILITY_MODES = constants.COOLDOWN_VIEWER_VISIBILITY_MO
 		WHILE_NOT_MOUNTED = "WHILE_NOT_MOUNTED",
 		SKYRIDING_ACTIVE = "SKYRIDING_ACTIVE",
 		SKYRIDING_INACTIVE = "SKYRIDING_INACTIVE",
+		FLYING_ACTIVE = "FLYING_ACTIVE",
+		FLYING_INACTIVE = "FLYING_INACTIVE",
 		MOUSEOVER = "MOUSEOVER",
 		PLAYER_HAS_TARGET = "PLAYER_HAS_TARGET",
 		PLAYER_CASTING = "PLAYER_CASTING",
@@ -939,6 +941,14 @@ local function createCooldownViewerDropdowns(category, expandable)
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE,
 			text = L["cooldownManagerHideSkyriding"] or (L["visibilityRule_hideSkyriding"] or "Hide while skyriding"),
 		},
+		{
+			value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE,
+			text = L["visibilityRule_flying"] or "While flying",
+		},
+		{
+			value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE,
+			text = L["visibilityRule_hideFlying"] or "Hide while flying",
+		},
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["cooldownManagerShowCasting"] or "Player is casting" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP, text = L["cooldownManagerShowGrouped"] or "In party/raid" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER, text = L["cooldownManagerShowMouseover"] or "On mouseover" },
@@ -1036,6 +1046,8 @@ local function createSpellActivationOverlayDropdown(category, expandable)
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED, text = L["cooldownManagerShowNotMounted"] or "Not mounted" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE, text = L["cooldownManagerShowSkyriding"] or "While skyriding" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE, text = L["VisibilityCondNotSkyriding"] or "Not skyriding" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE, text = L["visibilityRule_flying"] or "While flying" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE, text = L["VisibilityCondNotFlying"] or "Not flying" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["cooldownManagerShowCasting"] or "Player is casting" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,

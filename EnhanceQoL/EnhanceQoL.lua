@@ -74,6 +74,8 @@ local COOLDOWN_VIEWER_VISIBILITY_MODES = {
 	WHILE_NOT_MOUNTED = "WHILE_NOT_MOUNTED",
 	SKYRIDING_ACTIVE = "SKYRIDING_ACTIVE",
 	SKYRIDING_INACTIVE = "SKYRIDING_INACTIVE",
+	FLYING_ACTIVE = "FLYING_ACTIVE",
+	FLYING_INACTIVE = "FLYING_INACTIVE",
 	MOUSEOVER = "MOUSEOVER",
 	PLAYER_HAS_TARGET = "PLAYER_HAS_TARGET",
 	PLAYER_CASTING = "PLAYER_CASTING",
@@ -89,6 +91,8 @@ local SPELL_ACTIVATION_OVERLAY_VISIBILITY_KEYS = {
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED] = true,
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE] = true,
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] = true,
+	[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE] = true,
+	[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE] = true,
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING] = true,
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] = true,
 }
@@ -418,6 +422,20 @@ local visibilityRuleMetadata = {
 		appliesTo = { actionbar = true },
 		order = 26,
 	},
+	FLYING_ACTIVE = {
+		key = "FLYING_ACTIVE",
+		label = L["visibilityRule_flying"] or "While flying",
+		description = L["visibilityRule_flying_desc"],
+		appliesTo = { actionbar = true },
+		order = 27,
+	},
+	FLYING_INACTIVE = {
+		key = "FLYING_INACTIVE",
+		label = L["visibilityRule_hideFlying"] or "Hide while flying",
+		description = L["visibilityRule_hideFlying_desc"],
+		appliesTo = { actionbar = true },
+		order = 28,
+	},
 	ALWAYS_HIDDEN = {
 		key = "ALWAYS_HIDDEN",
 		label = L["visibilityRule_alwaysHidden"] or "Always hidden",
@@ -626,6 +644,15 @@ end
 local function IsPlayerMounted()
 	if IsMounted and IsMounted() then return true end
 	if IsInDruidTravelForm and IsInDruidTravelForm() then return true end
+	return false
+end
+
+local function IsPlayerFlying()
+	if C_PlayerInfo and C_PlayerInfo.GetGlidingInfo then
+		local isGliding = C_PlayerInfo.GetGlidingInfo()
+		if isGliding ~= nil then return isGliding == true end
+	end
+	if IsFlying and IsFlying() then return true end
 	return false
 end
 
@@ -1127,6 +1154,8 @@ local function normalizeCooldownViewerConfigValue(val, acc)
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] = true end
+	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE] = true end
+	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] = true end
 	if val == COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING then acc[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING] = true end
@@ -1210,19 +1239,23 @@ local function computeCooldownViewerTargetAlpha(cfg, state)
 	local isCasting = IsPlayerCasting()
 	local inGroup = IsInGroup and IsInGroup() and true or false
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding
+	local isFlying = IsPlayerFlying()
 	local fadedAlpha = (addon.functions and addon.functions.GetCooldownViewerFadedAlpha and addon.functions.GetCooldownViewerFadedAlpha()) or 0
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN] then return 0 end
 	local hideSkyriding = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] == true
+	local hideFlying = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE] == true
 	local hasShowRules = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_MOUNTED]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE]
+		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING]
 		or cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP]
 
 	if hideSkyriding and isSkyriding then return fadedAlpha end
+	if hideFlying and isFlying then return fadedAlpha end
 	if not hasShowRules then return 1 end
 
 	local shouldShow = false
@@ -1230,6 +1263,7 @@ local function computeCooldownViewerTargetAlpha(cfg, state)
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_MOUNTED] and mounted then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED] and not mounted then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE] and isSkyriding then shouldShow = true end
+	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE] and isFlying then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER] and hovered then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] and hasTarget then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING] and isCasting then shouldShow = true end
@@ -1609,6 +1643,7 @@ end
 local function computeSpellActivationOverlayTargetAlpha(cfg, activeAlpha, hiddenAlpha)
 	local mounted = IsPlayerMountedOrInVehicleUI()
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding and true or false
+	local isFlying = IsPlayerFlying()
 	local hasTarget = UnitExists and UnitExists("target") and true or false
 	local isCasting = IsPlayerCasting()
 
@@ -1617,6 +1652,8 @@ local function computeSpellActivationOverlayTargetAlpha(cfg, activeAlpha, hidden
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED] and not mounted then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE] and isSkyriding then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] and not isSkyriding then shouldShow = true end
+	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE] and isFlying then shouldShow = true end
+	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE] and not isFlying then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING] and isCasting then shouldShow = true end
 	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] and hasTarget then shouldShow = true end
 
@@ -1810,6 +1847,8 @@ local function GetActionBarVisibilityConfig(variable, incoming, persistLegacy)
 				or source.ALWAYS_OUT_OF_COMBAT == true
 				or source.SKYRIDING_ACTIVE == true
 				or source.SKYRIDING_INACTIVE == true
+				or source.FLYING_ACTIVE == true
+				or source.FLYING_INACTIVE == true
 				or source.PLAYER_CASTING == true
 				or source.PLAYER_MOUNTED == true
 				or source.PLAYER_NOT_MOUNTED == true
@@ -1832,6 +1871,8 @@ local function GetActionBarVisibilityConfig(variable, incoming, persistLegacy)
 			ALWAYS_OUT_OF_COMBAT = source.ALWAYS_OUT_OF_COMBAT == true,
 			SKYRIDING_ACTIVE = source.SKYRIDING_ACTIVE == true,
 			SKYRIDING_INACTIVE = source.SKYRIDING_INACTIVE == true,
+			FLYING_ACTIVE = source.FLYING_ACTIVE == true,
+			FLYING_INACTIVE = source.FLYING_INACTIVE == true,
 			PLAYER_CASTING = source.PLAYER_CASTING == true,
 			PLAYER_MOUNTED = source.PLAYER_MOUNTED == true,
 			PLAYER_NOT_MOUNTED = source.PLAYER_NOT_MOUNTED == true,
@@ -1846,6 +1887,8 @@ local function GetActionBarVisibilityConfig(variable, incoming, persistLegacy)
 			ALWAYS_OUT_OF_COMBAT = false,
 			SKYRIDING_ACTIVE = false,
 			SKYRIDING_INACTIVE = false,
+			FLYING_ACTIVE = false,
+			FLYING_INACTIVE = false,
 			PLAYER_CASTING = false,
 			PLAYER_MOUNTED = false,
 			PLAYER_NOT_MOUNTED = false,
@@ -1869,6 +1912,8 @@ local function GetActionBarVisibilityConfig(variable, incoming, persistLegacy)
 			or config.ALWAYS_OUT_OF_COMBAT
 			or config.SKYRIDING_ACTIVE
 			or config.SKYRIDING_INACTIVE
+			or config.FLYING_ACTIVE
+			or config.FLYING_INACTIVE
 			or config.PLAYER_CASTING
 			or config.PLAYER_MOUNTED
 			or config.PLAYER_NOT_MOUNTED
@@ -1890,6 +1935,8 @@ local function GetActionBarVisibilityConfig(variable, incoming, persistLegacy)
 			if config.ALWAYS_OUT_OF_COMBAT then stored.ALWAYS_OUT_OF_COMBAT = true end
 			if config.SKYRIDING_ACTIVE then stored.SKYRIDING_ACTIVE = true end
 			if config.SKYRIDING_INACTIVE then stored.SKYRIDING_INACTIVE = true end
+			if config.FLYING_ACTIVE then stored.FLYING_ACTIVE = true end
+			if config.FLYING_INACTIVE then stored.FLYING_INACTIVE = true end
 			if config.PLAYER_CASTING then stored.PLAYER_CASTING = true end
 			if config.PLAYER_MOUNTED then stored.PLAYER_MOUNTED = true end
 			if config.PLAYER_NOT_MOUNTED then stored.PLAYER_NOT_MOUNTED = true end
@@ -1923,6 +1970,7 @@ local function GetActionBarVisibilityContext(combatOverride)
 		hasTarget = UnitExists and UnitExists("target") and true or false,
 		inGroup = IsInGroup and IsInGroup() and true or false,
 		mounted = IsPlayerMounted(),
+		isFlying = IsPlayerFlying(),
 		isCasting = IsPlayerCasting(),
 		isSkyriding = addon.variables and addon.variables.isPlayerSkyriding,
 	}
@@ -1933,6 +1981,7 @@ local function ActionBarShouldForceShowByConfig(config, context, combatOverride)
 	if config.ALWAYS_HIDDEN then return false end
 	local ctx = context or GetActionBarVisibilityContext(combatOverride)
 	if config.SKYRIDING_ACTIVE and ctx.isSkyriding then return true end
+	if config.FLYING_ACTIVE and ctx.isFlying then return true end
 	if config.ALWAYS_IN_COMBAT and ctx.inCombat then return true end
 	if config.ALWAYS_OUT_OF_COMBAT and not ctx.inCombat then return true end
 	if config.PLAYER_CASTING and ctx.isCasting then return true end
@@ -2027,6 +2076,7 @@ local function ApplyActionBarAlpha(bar, variable, config, combatOverride, skipFa
 		or cfg.ALWAYS_IN_COMBAT
 		or cfg.ALWAYS_OUT_OF_COMBAT
 		or cfg.SKYRIDING_ACTIVE
+		or cfg.FLYING_ACTIVE
 		or cfg.PLAYER_CASTING
 		or cfg.PLAYER_MOUNTED
 		or cfg.PLAYER_NOT_MOUNTED
@@ -2035,6 +2085,15 @@ local function ApplyActionBarAlpha(bar, variable, config, combatOverride, skipFa
 
 	if cfg.SKYRIDING_INACTIVE then
 		if ctx.isSkyriding then
+			ApplyAlphaToRegion(bar, baseAlpha, useFade)
+			return
+		elseif not hasShowRules then
+			ApplyAlphaToRegion(bar, 1, useFade)
+			return
+		end
+	end
+	if cfg.FLYING_INACTIVE then
+		if ctx.isFlying then
 			ApplyAlphaToRegion(bar, baseAlpha, useFade)
 			return
 		elseif not hasShowRules then

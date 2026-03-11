@@ -34,6 +34,7 @@ Helper.RULE_DEFINITIONS = {
 	{ key = "IN_VEHICLE", label = L["VisibilityCondInVehicle"] or "In vehicle", order = 130 },
 	{ key = "IN_PET_BATTLE", label = L["VisibilityCondInPetBattle"] or "During pet battle", order = 140 },
 	{ key = "SKYRIDING", label = L["VisibilityCondSkyriding"] or "Skyriding", order = 150 },
+	{ key = "FLYING", label = L["VisibilityCondFlying"] or "Flying", order = 155 },
 	{ key = "HAS_TARGET", label = L["VisibilityCondHasTarget"] or "Has target", order = 160 },
 	{ key = "CASTING", label = L["VisibilityCondCasting"] or "Casting", order = 170 },
 	{ key = "MOUSEOVER", label = L["VisibilityCondMouseover"] or "Mouseover", order = 180 },
@@ -128,6 +129,9 @@ local function normalizeRuleNode(node)
 			negate = not negate
 		elseif node.key == "NOT_SKYRIDING" then
 			node.key = "SKYRIDING"
+			negate = not negate
+		elseif node.key == "NOT_FLYING" then
+			node.key = "FLYING"
 			negate = not negate
 		end
 		node.negate = negate
@@ -321,6 +325,15 @@ function Helper.IsInDruidTravelForm()
 	return form == 3
 end
 
+function Helper.IsPlayerFlying()
+	if C_PlayerInfo and C_PlayerInfo.GetGlidingInfo then
+		local isGliding = C_PlayerInfo.GetGlidingInfo()
+		if isGliding ~= nil then return isGliding == true end
+	end
+	if IsFlying and IsFlying() then return true end
+	return false
+end
+
 function Helper.BuildContext(runtime)
 	local inCombat = false
 	if InCombatLockdown and InCombatLockdown() then
@@ -335,6 +348,7 @@ function Helper.BuildContext(runtime)
 	local solo = not inGroup
 	local inInstance, instanceType = IsInInstance()
 	local mounted = (IsMounted and IsMounted()) or Helper.IsInDruidTravelForm()
+	local flying = Helper.IsPlayerFlying()
 	local inVehicle = false
 	if UnitInVehicle then inVehicle = UnitInVehicle("player") and true or false end
 	if not inVehicle and UnitHasVehicleUI then inVehicle = UnitHasVehicleUI("player") and true or false end
@@ -355,14 +369,16 @@ function Helper.BuildContext(runtime)
 		INSTANCE_PARTY = inInstance and instanceType == "party",
 		INSTANCE_RAID = inInstance and instanceType == "raid",
 		INSTANCE_PVP = inInstance and instanceType == "pvp",
-			INSTANCE_ARENA = inInstance and instanceType == "arena",
-			INSTANCE_SCENARIO = inInstance and instanceType == "scenario",
-			MOUNTED = mounted and true or false,
-			IN_VEHICLE = inVehicle and true or false,
-			IN_PET_BATTLE = inPetBattle and true or false,
-			NOT_MOUNTED = not mounted,
-			SKYRIDING = isSkyriding,
+		INSTANCE_ARENA = inInstance and instanceType == "arena",
+		INSTANCE_SCENARIO = inInstance and instanceType == "scenario",
+		MOUNTED = mounted and true or false,
+		IN_VEHICLE = inVehicle and true or false,
+		IN_PET_BATTLE = inPetBattle and true or false,
+		NOT_MOUNTED = not mounted,
+		SKYRIDING = isSkyriding,
+		FLYING = flying,
 		NOT_SKYRIDING = not isSkyriding,
+		NOT_FLYING = not flying,
 		HAS_TARGET = hasTarget,
 		CASTING = isCasting,
 		MOUSEOVER = false,

@@ -1456,6 +1456,7 @@ local function applyMerchantButtonInfo()
 
 							-- Upgrade arrow for Merchant items
 							if addon.db["showUpgradeArrowOnBagItems"] then
+								local isRecommended = addon.functions.IsItemRecommendedForSpec and addon.functions.IsItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID)
 								local function getEquipSlotsFor(equipLoc)
 									if equipLoc == "INVTYPE_FINGER" then
 										return { 11, 12 }
@@ -1491,21 +1492,24 @@ local function applyMerchantButtonInfo()
 									return nil
 								end
 
-								local invSlot = select(4, C_Item.GetItemInfoInstant(itemLink))
-								local slots = getEquipSlotsFor(invSlot)
-								local baseline
-								if slots and #slots > 0 then
-									for _, s in ipairs(slots) do
-										local eqLink = GetInventoryItemLink("player", s)
-										local eqIlvl = eqLink and (C_Item.GetDetailedItemLevelInfo(eqLink) or 0) or 0
-										if baseline == nil then
-											baseline = eqIlvl
-										else
-											baseline = math.min(baseline, eqIlvl)
+								local isUpgrade = false
+								if isRecommended then
+									local invSlot = select(4, C_Item.GetItemInfoInstant(itemLink))
+									local slots = getEquipSlotsFor(invSlot)
+									local baseline
+									if slots and #slots > 0 then
+										for _, s in ipairs(slots) do
+											local eqLink = GetInventoryItemLink("player", s)
+											local eqIlvl = eqLink and (C_Item.GetDetailedItemLevelInfo(eqLink) or 0) or 0
+											if baseline == nil then
+												baseline = eqIlvl
+											else
+												baseline = math.min(baseline, eqIlvl)
+											end
 										end
 									end
+									isUpgrade = baseline ~= nil and candidateIlvl and candidateIlvl > baseline
 								end
-								local isUpgrade = baseline ~= nil and candidateIlvl and candidateIlvl > baseline
 								if isUpgrade then
 									addon.functions.EnsureBagUpgradeIcon(itemButton)
 									local posUp = addon.db["bagUpgradeIconPosition"] or "BOTTOMRIGHT"

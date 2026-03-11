@@ -847,7 +847,7 @@ local function getCurrentSpecFilters()
 	return cachedSpecFilters
 end
 
-local function isItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID)
+function addon.functions.IsItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID)
 	if not itemLink then return false end
 	if not IsEquippableItem(itemLink) then return false end
 
@@ -967,6 +967,7 @@ local function updateButtonInfo(itemButton, bag, slot, frameName)
 		end
 		local setVisibility
 		local isUpgrade = nil
+		local isRecommended = nil
 
 		if addon.filterFrame then
 			if classID == 15 and subclassID == 0 then bAuc = true end -- ignore lockboxes etc.
@@ -985,8 +986,13 @@ local function updateButtonInfo(itemButton, bag, slot, frameName)
 				if addon.itemBagFilters["currentExpension"] and LE_EXPANSION_LEVEL_CURRENT ~= expId then setVisibility = true end
 				if addon.itemBagFilters["equipment"] and (nil == itemEquipLoc or addon.variables.ignoredEquipmentTypes[itemEquipLoc]) then setVisibility = true end
 				if addon.itemBagFilters["upgradeOnly"] then
-					if isUpgrade == nil then isUpgrade = isBagItemUpgrade(itemLink, itemEquipLoc) end
-					if not isUpgrade then setVisibility = true end
+					if isRecommended == nil then isRecommended = addon.functions.IsItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID) end
+					if not isRecommended then
+						setVisibility = true
+					else
+						if isUpgrade == nil then isUpgrade = isBagItemUpgrade(itemLink, itemEquipLoc) end
+						if not isUpgrade then setVisibility = true end
+					end
 				end
 				if addon.itemBagFilters["bind"] then
 					if nil == addon.itemBagFiltersBound[bKey] or addon.itemBagFiltersBound[bKey] == false then setVisibility = true end
@@ -1047,7 +1053,7 @@ local function updateButtonInfo(itemButton, bag, slot, frameName)
 
 				-- Upgrade arrow (bag): indicate if this item is higher ilvl than equipped
 				if addon.db["showUpgradeArrowOnBagItems"] then
-					local isRecommended = isItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID)
+					if isRecommended == nil then isRecommended = addon.functions.IsItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID) end
 					if isRecommended and isUpgrade == nil then isUpgrade = isBagItemUpgrade(itemLink, itemEquipLoc, itemLevelText) end
 					if isRecommended and isUpgrade then
 						addon.functions.EnsureBagUpgradeIcon(itemButton)
