@@ -974,6 +974,7 @@ local function didLayoutShapeChange(runtime, layout, layoutCount)
 		and runtime._eqolLayoutGrowthPoint == layout.growthPoint
 		and runtime._eqolLayoutRadialRadius == layout.radialRadius
 		and runtime._eqolLayoutRadialRotation == layout.radialRotation
+		and runtime._eqolLayoutRadialArcDegrees == layout.radialArcDegrees
 		and runtime._eqolLayoutRowSize1 == rowSize1
 		and runtime._eqolLayoutRowSize2 == rowSize2
 		and runtime._eqolLayoutRowSize3 == rowSize3
@@ -1003,6 +1004,7 @@ local function didLayoutShapeChange(runtime, layout, layoutCount)
 	runtime._eqolLayoutGrowthPoint = layout.growthPoint
 	runtime._eqolLayoutRadialRadius = layout.radialRadius
 	runtime._eqolLayoutRadialRotation = layout.radialRotation
+	runtime._eqolLayoutRadialArcDegrees = layout.radialArcDegrees
 	runtime._eqolLayoutRowSize1 = rowSize1
 	runtime._eqolLayoutRowSize2 = rowSize2
 	runtime._eqolLayoutRowSize3 = rowSize3
@@ -1351,7 +1353,7 @@ local function getEditorPreviewCount(panel, previewFrame, baseLayout, entries)
 
 	if layoutMode == "RADIAL" then return count end
 
-	local spacing = Helper.ClampInt((baseLayout and baseLayout.spacing) or 0, 0, 50, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
+	local spacing = Helper.ClampInt((baseLayout and baseLayout.spacing) or 0, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
 	local step = Helper.PREVIEW_ICON_SIZE + spacing
 	if step <= 0 then return count end
 	local width = previewFrame:GetWidth() or 0
@@ -3649,7 +3651,7 @@ end
 local function applyIconLayout(frame, count, layout)
 	if not frame then return end
 	local iconSize = Helper.ClampInt(layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
-	local spacing = Helper.ClampInt(layout.spacing, 0, 50, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
+	local spacing = Helper.ClampInt(layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
 	local layoutMode = Helper.NormalizeLayoutMode(layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
 	local direction = Helper.NormalizeDirection(layout.direction, Helper.PANEL_LAYOUT_DEFAULTS.direction)
 	local wrapCount = Helper.ClampInt(layout.wrapCount, 0, 40, Helper.PANEL_LAYOUT_DEFAULTS.wrapCount or 0)
@@ -3684,13 +3686,19 @@ local function applyIconLayout(frame, count, layout)
 	local height = 0
 	local radialRadius = nil
 	local radialRotation = nil
+	local radialArcDegrees = nil
 	local radialStep = nil
 	local radialBaseAngle = nil
 
 	if layoutMode == "RADIAL" then
 		radialRadius = Helper.ClampInt(layout.radialRadius, 0, Helper.RADIAL_RADIUS_RANGE or 600, Helper.PANEL_LAYOUT_DEFAULTS.radialRadius)
 		radialRotation = Helper.ClampNumber(layout.radialRotation, -Helper.RADIAL_ROTATION_RANGE, Helper.RADIAL_ROTATION_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.radialRotation)
-		radialStep = count > 0 and ((2 * math.pi) / count) or 0
+		radialArcDegrees = Helper.ClampInt(layout.radialArcDegrees, Helper.RADIAL_ARC_DEGREES_MIN or 15, Helper.RADIAL_ARC_DEGREES_MAX or 360, Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360)
+		if radialArcDegrees >= (Helper.RADIAL_ARC_DEGREES_MAX or 360) then
+			radialStep = count > 0 and ((2 * math.pi) / count) or 0
+		else
+			radialStep = count > 1 and (math.rad(radialArcDegrees) / (count - 1)) or 0
+		end
 		radialBaseAngle = (math.pi / 2) - math.rad(radialRotation or 0)
 		width = math.max(baseIconSize, radialRadius * 2)
 		height = width
@@ -6593,12 +6601,12 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			kind = SettingType.Slider,
 			parentId = "cooldownPanelStandaloneLayout",
 			minValue = 0,
-			maxValue = 50,
+			maxValue = Helper.SPACING_RANGE or 200,
 			valueStep = 1,
 			allowInput = true,
 			get = function()
 				local layout = getLayout()
-				return Helper.ClampInt(layout and layout.spacing, 0, 50, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
+				return Helper.ClampInt(layout and layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
 			end,
 			set = function(_, value) setPanelLayout("spacing", value) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
@@ -7675,6 +7683,7 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	data.growthPoint = Helper.NormalizeGrowthPoint(layout.growthPoint, Helper.PANEL_LAYOUT_DEFAULTS.growthPoint)
 	data.radialRadius = Helper.ClampInt(layout.radialRadius, 0, Helper.RADIAL_RADIUS_RANGE or 600, Helper.PANEL_LAYOUT_DEFAULTS.radialRadius)
 	data.radialRotation = Helper.ClampNumber(layout.radialRotation, -(Helper.RADIAL_ROTATION_RANGE or 360), Helper.RADIAL_ROTATION_RANGE or 360, Helper.PANEL_LAYOUT_DEFAULTS.radialRotation)
+	data.radialArcDegrees = Helper.ClampInt(layout.radialArcDegrees, Helper.RADIAL_ARC_DEGREES_MIN or 15, Helper.RADIAL_ARC_DEGREES_MAX or 360, Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360)
 	data.rangeOverlayEnabled = layout.rangeOverlayEnabled == true
 	data.rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor
 	data.noDesaturation = layout.noDesaturation == true
@@ -8975,7 +8984,7 @@ local function getPreviewLayout(panel, previewFrame, count)
 	if not previewFrame or not count or count < 1 then return previewLayout end
 
 	local iconSize = Helper.PREVIEW_ICON_SIZE
-	local spacing = Helper.ClampInt(baseLayout.spacing, 0, 50, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
+	local spacing = Helper.ClampInt(baseLayout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
 
 	local width = previewFrame:GetWidth() or 0
 	local height = previewFrame:GetHeight() or 0
@@ -11366,7 +11375,7 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 	if field == "iconSize" then
 		layout.iconSize = Helper.ClampInt(value, 12, 128, layout.iconSize)
 	elseif field == "spacing" then
-		layout.spacing = Helper.ClampInt(value, 0, 50, layout.spacing)
+		layout.spacing = Helper.ClampInt(value, 0, Helper.SPACING_RANGE or 200, layout.spacing)
 	elseif field == "layoutMode" then
 		layout.layoutMode = Helper.NormalizeLayoutMode(value, layout.layoutMode or Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
 		if Helper.IsFixedLayout(layout) then
@@ -11401,6 +11410,9 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 	elseif field == "radialRotation" then
 		layout.radialRotation =
 			Helper.ClampNumber(value, -(Helper.RADIAL_ROTATION_RANGE or 360), Helper.RADIAL_ROTATION_RANGE or 360, layout.radialRotation or Helper.PANEL_LAYOUT_DEFAULTS.radialRotation)
+	elseif field == "radialArcDegrees" then
+		layout.radialArcDegrees =
+			Helper.ClampInt(value, Helper.RADIAL_ARC_DEGREES_MIN or 15, Helper.RADIAL_ARC_DEGREES_MAX or 360, layout.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360)
 	elseif field == "rangeOverlayEnabled" then
 		layout.rangeOverlayEnabled = value == true
 		if updateRangeCheckSpells then updateRangeCheckSpells() end
@@ -11621,6 +11633,7 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "growthPoint", data.growthPoint, true)
 	applyEditLayout(panelId, "radialRadius", data.radialRadius, true)
 	applyEditLayout(panelId, "radialRotation", data.radialRotation, true)
+	applyEditLayout(panelId, "radialArcDegrees", data.radialArcDegrees, true)
 	applyEditLayout(panelId, "rangeOverlayEnabled", data.rangeOverlayEnabled, true)
 	applyEditLayout(panelId, "rangeOverlayColor", data.rangeOverlayColor, true)
 	applyEditLayout(panelId, "noDesaturation", data.noDesaturation, true)
@@ -12171,11 +12184,12 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				parentId = "cooldownPanelLayout",
 				default = layout.spacing,
 				minValue = 0,
-				maxValue = 50,
+				maxValue = Helper.SPACING_RANGE or 200,
 				valueStep = 1,
+				allowInput = true,
 				isShown = function() return not isRadialLayout() end,
 				disabled = function() return isRadialLayout() end,
-				get = function() return layout.spacing end,
+				get = function() return Helper.ClampInt(layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing) end,
 				set = function(_, value) applyEditLayout(panelId, "spacing", value) end,
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 			},
@@ -12316,6 +12330,22 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				disabled = function() return not isRadialLayout() end,
 				get = function() return layout.radialRotation or Helper.PANEL_LAYOUT_DEFAULTS.radialRotation end,
 				set = function(_, value) applyEditLayout(panelId, "radialRotation", value) end,
+				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+			},
+			{
+				name = L["CooldownPanelRadialArcDegrees"] or "Arc degrees",
+				kind = SettingType.Slider,
+				field = "radialArcDegrees",
+				parentId = "cooldownPanelLayout",
+				default = layout.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360,
+				minValue = Helper.RADIAL_ARC_DEGREES_MIN or 15,
+				maxValue = Helper.RADIAL_ARC_DEGREES_MAX or 360,
+				valueStep = 1,
+				allowInput = true,
+				isShown = function() return isRadialLayout() end,
+				disabled = function() return not isRadialLayout() end,
+				get = function() return layout.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360 end,
+				set = function(_, value) applyEditLayout(panelId, "radialArcDegrees", value) end,
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 			},
 			{
@@ -13452,6 +13482,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			growthPoint = Helper.NormalizeGrowthPoint(layout.growthPoint, Helper.PANEL_LAYOUT_DEFAULTS.growthPoint),
 			radialRadius = layout.radialRadius or Helper.PANEL_LAYOUT_DEFAULTS.radialRadius,
 			radialRotation = layout.radialRotation or Helper.PANEL_LAYOUT_DEFAULTS.radialRotation,
+			radialArcDegrees = layout.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360,
 			rangeOverlayEnabled = layout.rangeOverlayEnabled == true,
 			rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor,
 			noDesaturation = layout.noDesaturation == true,

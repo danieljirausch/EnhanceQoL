@@ -117,6 +117,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	growthPoint = "TOPLEFT",
 	radialRadius = 80,
 	radialRotation = 0,
+	radialArcDegrees = 360,
 	strata = "MEDIUM",
 	rangeOverlayEnabled = false,
 	rangeOverlayColor = { 1, 0.1, 0.1, 0.35 },
@@ -255,9 +256,12 @@ Helper.PREVIEW_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 Helper.PREVIEW_ICON_SIZE = 36
 Helper.PREVIEW_COUNT_FONT_MIN = 12
 Helper.OFFSET_RANGE = 200
+Helper.SPACING_RANGE = 200
 Helper.GLOW_INSET_RANGE = 20
 Helper.RADIAL_RADIUS_RANGE = 600
 Helper.RADIAL_ROTATION_RANGE = 360
+Helper.RADIAL_ARC_DEGREES_MIN = 15
+Helper.RADIAL_ARC_DEGREES_MAX = 360
 Helper.EXAMPLE_COOLDOWN_PERCENT = 0.55
 Helper.GLOW_STYLE_OPTIONS = {
 	{ value = "MARCHING_ANTS", labelKey = "CooldownPanelGlowStyleMarchingAnts", fallback = "Marching ants" },
@@ -1000,6 +1004,13 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.fixedSlotCount = Helper.NormalizeFixedSlotCount(panel.layout.fixedSlotCount, layoutDefaults.fixedSlotCount or Helper.PANEL_LAYOUT_DEFAULTS.fixedSlotCount or 0)
 	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
 	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
+	panel.layout.spacing = Helper.ClampInt(panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, layoutDefaults.spacing or Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
+	panel.layout.radialArcDegrees = Helper.ClampInt(
+		panel.layout.radialArcDegrees,
+		Helper.RADIAL_ARC_DEGREES_MIN or 15,
+		Helper.RADIAL_ARC_DEGREES_MAX or 360,
+		layoutDefaults.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360
+	)
 	panel.layout.procGlowEnabled = panel.layout.procGlowEnabled ~= false
 	panel.layout.readyGlowStyle = Helper.NormalizeGlowStyle(panel.layout.readyGlowStyle, layoutDefaults.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
 	panel.layout.pandemicGlowStyle =
