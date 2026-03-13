@@ -337,28 +337,6 @@ applyParentSection(data, auctionHouseExpandable)
 table.sort(data, function(a, b) return a.text < b.text end)
 addon.functions.SettingsCreateCheckboxes(cVendorEconomy, data)
 
-local craftingOrdersExpandable = addon.functions.SettingsCreateExpandableSection(cVendorEconomy, {
-	name = _G["PLACE_CRAFTING_ORDERS"] or "Crafting Orders",
-	newTagID = "EconomyCraftingOrders",
-	expanded = false,
-	colorizeTitle = false,
-})
-
-data = {
-	{
-		text = (function()
-			local label = _G["AUCTION_HOUSE_FILTER_CURRENTEXPANSION_ONLY"] or "Current expansion"
-			return L["alwaysUserCurExpCraftingOrders"]:format(label)
-		end)(),
-		var = "alwaysUserCurExpCraftingOrders",
-		func = function(value) addon.db["alwaysUserCurExpCraftingOrders"] = value end,
-	},
-}
-
-applyParentSection(data, craftingOrdersExpandable)
-table.sort(data, function(a, b) return a.text < b.text end)
-addon.functions.SettingsCreateCheckboxes(cVendorEconomy, data)
-
 local craftTitle = (LVendor and LVendor["vendorCraftShopperTitle"]) or "Craft Shopper"
 local craftEnableText = (LVendor and LVendor["vendorCraftShopperEnable"]) or "Enable Craft Shopper"
 local craftEnableDesc = LVendor and LVendor["vendorCraftShopperEnableDesc"] or nil
@@ -381,6 +359,28 @@ addon.functions.SettingsCreateCheckbox(cVendorEconomy, {
 	default = false,
 	parentSection = auctionHouseExpandable,
 })
+
+local craftingOrdersExpandable = addon.functions.SettingsCreateExpandableSection(cVendorEconomy, {
+	name = _G["PLACE_CRAFTING_ORDERS"] or "Crafting Orders",
+	newTagID = "EconomyCraftingOrders",
+	expanded = false,
+	colorizeTitle = false,
+})
+
+data = {
+	{
+		text = (function()
+			local label = _G["AUCTION_HOUSE_FILTER_CURRENTEXPANSION_ONLY"] or "Current expansion"
+			return L["alwaysUserCurExpCraftingOrders"]:format(label)
+		end)(),
+		var = "alwaysUserCurExpCraftingOrders",
+		func = function(value) addon.db["alwaysUserCurExpCraftingOrders"] = value end,
+	},
+}
+
+applyParentSection(data, craftingOrdersExpandable)
+table.sort(data, function(a, b) return a.text < b.text end)
+addon.functions.SettingsCreateCheckboxes(cVendorEconomy, data)
 
 local mailboxExpandable = addon.functions.SettingsCreateExpandableSection(addon.SettingsLayout.rootSOCIAL, {
 	name = MINIMAP_TRACKING_MAILBOX,

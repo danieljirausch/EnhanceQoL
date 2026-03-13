@@ -19,7 +19,6 @@ addon.Vendor.CraftShopper = addon.Vendor.CraftShopper or {}
 addon.Vendor.CraftShopper.items = addon.Vendor.CraftShopper.items or {}
 addon.Vendor.CraftShopper.multipliers = addon.Vendor.CraftShopper.multipliers or {}
 
-local RANK_TO_USE = 3 -- 1-3: gewünschter Qualitätsrang
 local isRecraftTbl = { false, true } -- erst normale, dann Recrafts
 
 local SCAN_DELAY = 0.3
@@ -320,11 +319,15 @@ end
 local function GetTrackedReagentItemID(slot)
 	if not slot or not slot.reagents then return nil end
 
-	local preferredReagent = slot.reagents[RANK_TO_USE]
-	if preferredReagent and preferredReagent.itemID and preferredReagent.itemID ~= 0 then return preferredReagent.itemID end
+	-- Quality reagents are ordered by ascending quality. Pick the highest
+	-- available entry so the shopping list follows the current max-quality tier.
+	for index = #slot.reagents, 1, -1 do
+		local reagent = slot.reagents[index]
+		if reagent and reagent.itemID and reagent.itemID ~= 0 then return reagent.itemID end
+	end
 
 	for _, reagent in ipairs(slot.reagents) do
-		if reagent.itemID and reagent.itemID ~= 0 then return reagent.itemID end
+		if reagent and reagent.itemID and reagent.itemID ~= 0 then return reagent.itemID end
 	end
 
 	return nil
