@@ -341,6 +341,7 @@ globals = {
 	"LFDQueueFrameRoleButtonDPS",
 	"BackdropTemplateMixin",
 	"C_FriendList",
+	"C_InstanceEncounter",
 	"StaticPopup_Hide",
 	"C_Timer",
 	"C_EditMode",
