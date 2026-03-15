@@ -1733,9 +1733,17 @@ local function isValidStatusbarPath(path)
 	return RB.TEXTURE_LIST_CACHE and RB.TEXTURE_LIST_CACHE.statusbarPathCache and RB.TEXTURE_LIST_CACHE.statusbarPathCache[path] == true
 end
 
-local function resolveTexture(cfg)
+local function resolveTexture(cfg, pType)
 	local sel = cfg and cfg.barTexture
-	if sel == nil or sel == "DEFAULT" or not isValidStatusbarPath(sel) then return RB.DEFAULT_RB_TEX end
+	-- If DEFAULT is selected, try to use Blizzard atlas for the power type
+	if sel == nil or sel == "DEFAULT" then
+		if pType and RB.ATLAS_BY_POWER[pType] then
+			return RB.ATLAS_BY_POWER[pType]
+		end
+		return RB.DEFAULT_RB_TEX
+	end
+	-- Custom texture selected - validate and return
+	if not isValidStatusbarPath(sel) then return RB.DEFAULT_RB_TEX end
 	return sel
 end
 
@@ -1945,7 +1953,7 @@ local function applyStatusBarInsets(frame, inset, force)
 	if frame.essences then
 		local cfg = frame._cfg or (frame._rbType and getBarSettings(frame._rbType)) or getBarSettings("ESSENCE") or {}
 		local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-		ResourceBars.LayoutEssences(frame, cfg, count, resolveTexture(cfg))
+		ResourceBars.LayoutEssences(frame, cfg, count, resolveTexture(cfg, "ESSENCE"))
 	end
 end
 
@@ -2012,7 +2020,7 @@ function ResourceBars.SyncAbsorbBarAppearance(bar, cfg, forceLayout)
 	cfg = cfg or {}
 
 	local absorb = bar.absorbBar
-	local desiredTexture = resolveTexture({ barTexture = cfg.absorbTexture or cfg.barTexture })
+	local desiredTexture = resolveTexture({ barTexture = cfg.absorbTexture or cfg.barTexture }, "HEALTH")
 	local currentTexture = absorb.GetStatusBarTexture and absorb:GetStatusBarTexture() or nil
 	local currentPath = currentTexture and currentTexture.GetTexture and currentTexture:GetTexture() or nil
 	local textureChanged = currentPath ~= desiredTexture
@@ -3117,7 +3125,7 @@ function createHealthBar()
 	end
 	do
 		local cfgTex = getBarSettings("HEALTH") or {}
-		healthBar:SetStatusBarTexture(resolveTexture(cfgTex))
+		healthBar:SetStatusBarTexture(resolveTexture(cfgTex, "HEALTH"))
 	end
 	healthBar:SetClampedToScreen(true)
 	local anchor = getAnchor("HEALTH", addon.variables.unitSpec)
@@ -3170,7 +3178,7 @@ function createHealthBar()
 	absorbBar:SetFrameLevel((healthBar:GetFrameLevel() + 1))
 	do
 		local cfgTexH = getBarSettings("HEALTH") or {}
-		absorbBar:SetStatusBarTexture(resolveTexture({ barTexture = cfgTexH.absorbTexture or cfgTexH.barTexture }))
+		absorbBar:SetStatusBarTexture(resolveTexture({ barTexture = cfgTexH.absorbTexture or cfgTexH.barTexture }, "HEALTH"))
 	end
 	absorbBar:SetStatusBarColor(0.8, 0.8, 0.8, 0.8)
 	healthBar.absorbBar = absorbBar
@@ -3619,12 +3627,12 @@ function updatePowerBar(type, runeSlot)
 					else
 						fallbackR, fallbackG, fallbackB, fallbackA = cooldownR * 0.35, cooldownG * 0.35, cooldownB * 0.35, (cooldownA or 1) * 0.9
 					end
-					local bgTexture, bgR, bgG, bgB, bgA, bgVisible
-					if ResourceBars.ResolveDiscreteSegmentBackground then
-						bgTexture, bgR, bgG, bgB, bgA, bgVisible = ResourceBars.ResolveDiscreteSegmentBackground(cfg, resolveTexture(cfg), fallbackR, fallbackG, fallbackB, fallbackA)
-					else
-						bgTexture, bgR, bgG, bgB, bgA, bgVisible = resolveTexture(cfg), fallbackR, fallbackG, fallbackB, fallbackA, true
-					end
+				local bgTexture, bgR, bgG, bgB, bgA, bgVisible
+				if ResourceBars.ResolveDiscreteSegmentBackground then
+					bgTexture, bgR, bgG, bgB, bgA, bgVisible = ResourceBars.ResolveDiscreteSegmentBackground(cfg, resolveTexture(cfg, "HEALTH"), fallbackR, fallbackG, fallbackB, fallbackA)
+				else
+					bgTexture, bgR, bgG, bgB, bgA, bgVisible = resolveTexture(cfg, "HEALTH"), fallbackR, fallbackG, fallbackB, fallbackA, true
+				end
 					if bgVisible then
 						if sb._rbSegmentBgPath ~= bgTexture then
 							sb._rbSegmentBg:SetTexture(bgTexture)
@@ -4198,7 +4206,7 @@ function updatePowerBar(type, runeSlot)
 
 	if type == "ESSENCE" then
 		local maxVal = maxPower or 0
-		local essenceTexture = resolveTexture(cfg)
+		local essenceTexture = resolveTexture(cfg, "ESSENCE")
 		if essenceSecret then
 			ResourceBars.UpdateEssenceSegments(bar, cfg, 0, 0, 0, RB.WHITE, ResourceBars.LayoutEssences, essenceTexture)
 			ResourceBars.DeactivateEssenceTicker(bar)
@@ -4224,9 +4232,9 @@ function updatePowerBar(type, runeSlot)
 						local current = UnitPower("player", POWER_ENUM.ESSENCE)
 						local maxPower = UnitPowerMax("player", POWER_ENUM.ESSENCE)
 						self._essenceMaxPower = maxPower
-						local cfgOnUpdate = self._essenceConfig or {}
-						local texOnUpdate = resolveTexture(cfgOnUpdate)
-						if issecretvalue and (issecretvalue(current) or issecretvalue(maxPower)) then
+					local cfgOnUpdate = self._essenceConfig or {}
+					local texOnUpdate = resolveTexture(cfgOnUpdate, "ESSENCE")
+					if issecretvalue and (issecretvalue(current) or issecretvalue(maxPower)) then
 							ResourceBars.UpdateEssenceSegments(self, cfgOnUpdate, 0, 0, 0, RB.WHITE, ResourceBars.LayoutEssences, texOnUpdate)
 							ResourceBars.DeactivateEssenceTicker(self)
 							return
@@ -4341,7 +4349,7 @@ refreshDiscreteSegmentsForBar = function(pType, bar, cfg, value, maxValue, rawVa
 			segments,
 			scaledValue,
 			bar._lastColor or bar._baseColor or RB.WHITE,
-			resolveTexture(cfg),
+			resolveTexture(cfg, pType),
 			separatorThickness,
 			(cfg and cfg.separatorColor) or RB.SEP_DEFAULT,
 			chargedPoints
@@ -4374,16 +4382,16 @@ updateBarSeparators = function(pType)
 		local cfg = getBarSettings("ESSENCE") or {}
 		local separatedOffset = tonumber(cfg.separatedOffset) or 0
 		if separatedOffset > 0 then
-			if bar.separatorMarks then
-				for _, tx in ipairs(bar.separatorMarks) do
-					tx:Hide()
-				end
+		if bar.separatorMarks then
+			for _, tx in ipairs(bar.separatorMarks) do
+				tx:Hide()
 			end
-			if bar:IsShown() then
-				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-				ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg))
-			end
-			return
+		end
+		if bar:IsShown() then
+			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+			ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg, "ESSENCE"))
+		end
+		return
 		end
 	end
 	local cfg = getBarSettings(pType)
@@ -4393,7 +4401,7 @@ updateBarSeparators = function(pType)
 			if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
 			if bar:IsShown() then
 				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-				ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}))
+				ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}, "ESSENCE"))
 			end
 		elseif pType ~= "RUNES" then
 			if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
@@ -4411,7 +4419,7 @@ updateBarSeparators = function(pType)
 		local segCount = getSeparatorSegmentCount(pType, cfg)
 		local separatorThickness = (cfg and cfg.showSeparator == true and ((cfg and cfg.separatorThickness) or RB.SEPARATOR_THICKNESS)) or 0
 		if ResourceBars.LayoutDiscreteSegments and segCount and segCount >= 2 then
-			ResourceBars.LayoutDiscreteSegments(bar, cfg, segCount, resolveTexture(cfg), separatorThickness, (cfg and cfg.separatorColor) or RB.SEP_DEFAULT)
+			ResourceBars.LayoutDiscreteSegments(bar, cfg, segCount, resolveTexture(cfg, pType), separatorThickness, (cfg and cfg.separatorColor) or RB.SEP_DEFAULT)
 			setParentBarTextureVisible(bar, false)
 		else
 			if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
@@ -4427,7 +4435,19 @@ updateBarSeparators = function(pType)
 		if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
 		if bar:IsShown() then
 			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-			ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}))
+			ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}, "ESSENCE"))
+		end
+		if bar.separatorMarks then
+			for _, tx in ipairs(bar.separatorMarks) do
+				tx:Hide()
+			end
+		end
+		return
+	elseif pType == "ESSENCE" then
+		if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
+		if bar:IsShown() then
+			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+			ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}, "ESSENCE"))
 		end
 	elseif pType ~= "RUNES" then
 		if ResourceBars.HideDiscreteSegments then ResourceBars.HideDiscreteSegments(bar) end
@@ -4736,7 +4756,7 @@ function layoutRunes(bar)
 	local fr, fg, fb, fa = resolveFontColor(cfg)
 	local vertical = cfg.verticalFill == true
 	local readyR, readyG, readyB, readyA = resolveRuneReadyColor(cfg)
-	local texturePath = resolveTexture(cfg)
+	local texturePath = resolveTexture(cfg, "RUNES")
 	local separatedOffset = tonumber(cfg.separatedOffset) or 0
 	local useSegmentBorders = separatedOffset > 0 or cfg.useGradient == true
 	local borderEnabled, borderTexture, borderEdgeSize, borderOutset, borderR, borderG, borderB, borderA
@@ -4765,14 +4785,14 @@ function layoutRunes(bar)
 		if not sb then
 			sb = CreateFrame("StatusBar", bar:GetName() .. "Rune" .. i, inner)
 			local cfgR = getBarSettings("RUNES") or {}
-			sb:SetStatusBarTexture(resolveTexture(cfgR))
+			sb:SetStatusBarTexture(resolveTexture(cfgR, "RUNES"))
 			sb:SetMinMaxValues(0, 1)
 			sb:Show()
 			bar.runes[i] = sb
 		end
 		do
 			local cfgR2 = getBarSettings("RUNES") or {}
-			local wantTex = resolveTexture(cfgR2)
+			local wantTex = resolveTexture(cfgR2, "RUNES")
 			if sb._rb_tex ~= wantTex then
 				sb:SetStatusBarTexture(wantTex)
 				sb._rb_tex = wantTex
@@ -4933,7 +4953,7 @@ local function createPowerBar(type, anchor)
 	bar:SetSize(w, h)
 	do
 		local cfg2 = getBarSettings(type) or {}
-		bar:SetStatusBarTexture(resolveTexture(cfg2))
+		bar:SetStatusBarTexture(resolveTexture(cfg2, type))
 		configureSpecialTexture(bar, type, cfg2)
 	end
 	bar:SetClampedToScreen(true)
@@ -5018,7 +5038,7 @@ local function createPowerBar(type, anchor)
 		local tex = bar:GetStatusBarTexture()
 		if tex then tex:SetAlpha(0) end
 		local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-		ResourceBars.LayoutEssences(bar, settings or {}, count, resolveTexture(settings or {}))
+		ResourceBars.LayoutEssences(bar, settings or {}, count, resolveTexture(settings or {}, "ESSENCE"))
 	else
 		if not bar.text then bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 		applyFontToString(bar.text, settings)
@@ -5071,7 +5091,7 @@ local function createPowerBar(type, anchor)
 		elseif type == "ESSENCE" then
 			local cfg = getBarSettings("ESSENCE") or {}
 			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-			ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg))
+			ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg, "ESSENCE"))
 			if ResourceBars.separatorEligible[type] then updateBarSeparators(type) end
 		elseif ResourceBars.separatorEligible[type] then
 			updateBarSeparators(type)
@@ -6395,7 +6415,7 @@ function ResourceBars.Refresh()
 		end
 		-- Apply current texture selection to health bar
 		local hCfg2 = getBarSettings("HEALTH") or {}
-		local hTex = resolveTexture(hCfg2)
+		local hTex = resolveTexture(hCfg2, "HEALTH")
 		healthBar:SetStatusBarTexture(hTex)
 		configureSpecialTexture(healthBar, "HEALTH", hCfg2)
 		if healthBar.absorbBar then ResourceBars.SyncAbsorbBarAppearance(healthBar, hCfg2, true) end
@@ -6453,10 +6473,10 @@ function ResourceBars.Refresh()
 			if pType == "RUNES" then
 				layoutRunes(bar)
 				updatePowerBar("RUNES")
-			elseif pType == "ESSENCE" then
-				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-				ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}))
-				updatePowerBar("ESSENCE")
+		elseif pType == "ESSENCE" then
+			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+			ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}, "ESSENCE"))
+			updatePowerBar("ESSENCE")
 			else
 				updatePowerBar(pType)
 			end
@@ -6474,7 +6494,7 @@ function ResourceBars.Refresh()
 		end
 		wasMax = hCfg.useMaxColor == true
 		healthBar._cfg = hCfg
-		healthBar:SetStatusBarTexture(resolveTexture(hCfg))
+		healthBar:SetStatusBarTexture(resolveTexture(hCfg, "HEALTH"))
 		configureSpecialTexture(healthBar, "HEALTH", hCfg)
 		applyBackdrop(healthBar, hCfg)
 		if healthBar.text then applyFontToString(healthBar.text, hCfg) end
@@ -6487,18 +6507,18 @@ function ResourceBars.Refresh()
 		if bar then
 			local cfg = getBarSettings(pType) or {}
 			bar._cfg = cfg
-			if pType == "RUNES" then
-				bar:SetStatusBarTexture(resolveTexture(cfg))
-				local tex = bar:GetStatusBarTexture()
-				if tex then tex:SetAlpha(0) end
-			elseif pType == "ESSENCE" then
-				bar:SetStatusBarTexture(resolveTexture(cfg))
-				local tex = bar:GetStatusBarTexture()
-				if tex then tex:SetAlpha(0) end
-			else
-				bar:SetStatusBarTexture(resolveTexture(cfg))
-				configureSpecialTexture(bar, pType, cfg)
-			end
+		if pType == "RUNES" then
+			bar:SetStatusBarTexture(resolveTexture(cfg, "RUNES"))
+			local tex = bar:GetStatusBarTexture()
+			if tex then tex:SetAlpha(0) end
+		elseif pType == "ESSENCE" then
+			bar:SetStatusBarTexture(resolveTexture(cfg, "ESSENCE"))
+			local tex = bar:GetStatusBarTexture()
+			if tex then tex:SetAlpha(0) end
+		else
+			bar:SetStatusBarTexture(resolveTexture(cfg, pType))
+			configureSpecialTexture(bar, pType, cfg)
+		end
 			applyBackdrop(bar, cfg)
 			configureBarBehavior(bar, cfg, pType)
 			if pType ~= "RUNES" then applyBarFillColor(bar, cfg, pType) end
@@ -6506,12 +6526,12 @@ function ResourceBars.Refresh()
 				applyFontToString(bar.text, cfg)
 				applyTextPosition(bar, cfg, 3, 0)
 			end
-			if pType == "RUNES" then
-				layoutRunes(bar)
-			elseif pType == "ESSENCE" then
-				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-				ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}))
-			end
+		if pType == "RUNES" then
+			layoutRunes(bar)
+		elseif pType == "ESSENCE" then
+			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+			ResourceBars.LayoutEssences(bar, cfg or {}, count, resolveTexture(cfg or {}, "ESSENCE"))
+		end
 			if pType ~= "RUNES" then updatePowerBar(pType) end
 		end
 	end
