@@ -1739,6 +1739,19 @@ local function resolveTexture(cfg, pType)
 	local sel = cfg and cfg.barTexture
 	-- If DEFAULT is selected, try to use Blizzard atlas for the power type
 	if sel == nil or sel == "DEFAULT" then
+		-- For STAGGER with DEFAULT texture, return texture based on stagger state
+		if pType == "STAGGER" then
+			local stagger = (UnitStagger and UnitStagger("player")) or 0
+			local maxHealth = UnitHealthMax("player") or 1
+			local percent = maxHealth > 0 and (stagger / maxHealth) or 0
+			if percent >= RB.STAGGER_RED_THRESHOLD then
+				return "Unit_Monk_Stagger_Fill_Red"
+			elseif percent >= RB.STAGGER_YELLOW_THRESHOLD then
+				return "Unit_Monk_Stagger_Fill_Yellow"
+			else
+				return "Unit_Monk_Stagger_Fill_Green"
+			end
+		end
 		if pType and RB.ATLAS_BY_POWER[pType] then
 			return RB.ATLAS_BY_POWER[pType]
 		end
