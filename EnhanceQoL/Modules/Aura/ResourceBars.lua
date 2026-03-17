@@ -1655,7 +1655,6 @@ RB.ATLAS_BY_POWER = {
 	RAGE = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage",
 	MANA = "UI-HUD-UnitFrame-Player-PortraitOn-ClassResource-Bar-Mana",
 	HEALTH = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health",
-	STAGGER = "Unit_Monk_Stagger_Fill_Green",
 }
 
 local function isDefaultTextureSelection(cfg, pType)
