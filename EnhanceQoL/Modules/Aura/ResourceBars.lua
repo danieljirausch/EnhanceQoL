@@ -1643,6 +1643,7 @@ addon.Aura.functions.getStatusbarDropdownLists = getStatusbarDropdownLists
 -- Healthbar: /run local t=PlayerFrame_GetHealthBar():GetStatusBarTexture(); print("tex:", t:GetTexture(), "atlas:", t:GetAtlas()); local a,b,c,d,e,f,g,h=t:GetTexCoord(); print("tc:",a,b,c,d,e,f,g,h)
 
 RB.ATLAS_BY_POWER = {
+	EBON_MIGHT = "Unit_Evoker_EbonMight_Fill",
 	LUNAR_POWER = "Unit_Druid_AstralPower_Fill",
 	MAELSTROM = "Unit_Shaman_Maelstrom_Fill",
 	INSANITY = "Unit_Priest_Insanity_Fill",
@@ -1652,8 +1653,9 @@ RB.ATLAS_BY_POWER = {
 	ENERGY = "UI-HUD-UnitFrame-Player-PortraitOn-ClassResource-Bar-Energy",
 	FOCUS = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Focus",
 	RAGE = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Rage",
-	MANA = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana",
+	MANA = "UI-HUD-UnitFrame-Player-PortraitOn-ClassResource-Bar-Mana",
 	HEALTH = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health",
+	STAGGER = "Unit_Monk_Stagger_Fill_Green",
 }
 
 local function isDefaultTextureSelection(cfg, pType)
